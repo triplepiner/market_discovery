@@ -1,0 +1,7 @@
+ticker,split,regime,n_options,sigma_discovered,sigma_market,ratio,r2,skipped,reason
+QQQ,maturity,Short (<2mo),329,0.24137635424913037,0.2502435218875966,0.9645658454149749,0.8495226636588455,False,
+QQQ,maturity,Medium (2-6mo),119,,0.24596902617574729,,0.8609749457527479,False,
+QQQ,maturity,Long (>6mo),63,,0.28275967879159103,,0.7942219101755594,False,
+QQQ,moneyness,OTM puts (<0.95),11,,0.4072914440571178,,,True,insufficient data (11 < 30)
+QQQ,moneyness,ATM (0.95-1.05),136,,0.29316324349066786,,0.8524765938415813,False,
+QQQ,moneyness,OTM calls (>1.05),364,,0.23369199335286897,,0.7731710565561036,False,

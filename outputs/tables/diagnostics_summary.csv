@@ -1,0 +1,6 @@
+check,status,detail
+data_leakage,PASS,Train/val/test sets are disjoint
+overfitting_call,PASS,"No significant overfitting detected. Val/train ratio = 0.02, best epoch = 4934."
+overfitting_put,PASS,"No significant overfitting detected. Val/train ratio = 0.73, best epoch = 550."
+convergence_call,WARN,Loss is still decreasing significantly (tail relative change = 1.4826e-01). Continue training or increase learning rate schedule.
+convergence_put,PASS,"Training converged after 7000 epochs. Final loss = 1.198302e+02, tail relative change = 7.8359e-03."

@@ -1,0 +1,94 @@
+========================================================================
+  BLACK-SCHOLES PDE DISCOVERY — FINAL RESULTS SUMMARY
+========================================================================
+
+  1. SINDy PDE Discovery (Clean Data, 100x100 grid)
+     Call PDE: dV/dt = 0.049897*V +0.038175*dV/dS +0.555272*d2V/dS2 -0.050237*S*dV/dS -0.020097*S2*d2V/dS2
+     R²(noisy): 0.999998
+     Max coeff rel error (active): 5552718294.095469
+     Correct 3-term structure: NO
+     Condition number: 6.78e+04
+
+  2. PINN Validation
+     Call: rel L2=1.007422e-02, R²=0.999825
+     Put: rel L2=4.804298e-01, R²=0.598844
+
+  3. METHOD RANKINGS BY NOISE REGIME (by R²(clean))
+  =================================================================
+  Regime           | Best Method  | R²(clean) Range  | Threshold 
+  -----------------------------------------------------------------
+  0 - 0.5%         | FD           | 1.000 - 0.82     | < 0.5%    
+  0.5% - 2.5%      | SavGol       | 0.871 - 0.989     | at 0.5%   
+  2.5% - 50%       | Weak SINDy   | 0.572 - 0.891     | at 2.5%   
+  > 50%            | Unreliable   | < 0.5            | at 50%    
+  =================================================================
+
+  4. NEURAL DERIVATIVE ESTIMATION
+     Best config: 5x32, epochs=3000, lr=0.001
+     Clean data R²(clean): 0.9461 (improved from 0.867)
+     Verdict: UNDERPERFORMS SavGol and Weak at all noise levels
+     Limitation: autograd d²V/dS² amplifies fitting errors
+
+  5. ADAPTIVE DENOISER
+     Thresholds: FD < 0.5%, SavGol 0.5%-2.5%, Weak >= 2.5%
+     Near-oracle performance: within 0.000 of best method at all noise levels
+
+     noise= 0.0%: strategy=savgol, R²(clean)=0.9999
+     noise= 0.5%: strategy=savgol, R²(clean)=0.9891
+     noise= 1.0%: strategy=savgol, R²(clean)=0.9578
+     noise= 2.0%: strategy=savgol, R²(clean)=0.9064
+     noise= 3.0%: strategy=weak, R²(clean)=0.8913
+     noise= 5.0%: strategy=weak, R²(clean)=0.8853
+     noise= 7.0%: strategy=weak, R²(clean)=0.8846
+     noise=10.0%: strategy=weak, R²(clean)=0.8878
+     noise=12.0%: strategy=weak, R²(clean)=0.8874
+     noise=15.0%: strategy=weak, R²(clean)=0.8789
+     noise=20.0%: strategy=weak, R²(clean)=0.8316
+     noise=25.0%: strategy=weak, R²(clean)=0.7272
+     noise=30.0%: strategy=weak, R²(clean)=0.5716
+
+  6. FINAL HEAD-TO-HEAD: R²(clean) ACROSS ALL NOISE LEVELS
+  ======================================================================
+   Noise |       FD |   SavGol |  Neural* |     Weak | Adaptive |   Best
+  ----------------------------------------------------------------------
+   0.0% |    1.000 |    1.000 |    0.867 |    0.901 |    1.000 |     FD
+   0.5% |    0.825 |    0.989 |    0.866 |    0.900 |    0.989 |     SG
+   1.0% |    0.816 |    0.958 |    0.857 |    0.898 |    0.958 |     SG
+   2.0% |    0.791 |    0.906 |    0.811 |    0.895 |    0.906 |     SG
+   3.0% |    0.716 |    0.871 |    0.739 |    0.891 |    0.891 |   Weak
+   5.0% |    0.405 |    0.846 |    0.557 |    0.885 |    0.885 |   Weak
+   7.0% |    0.010 |    0.835 |    0.369 |    0.885 |    0.885 |   Weak
+  10.0% |   -0.486 |    0.816 |    0.119 |    0.888 |    0.888 |   Weak
+  15.0% |   -0.995 |    0.757 |   -0.207 |    0.879 |    0.879 |   Weak
+  20.0% |   -1.298 |    0.650 |   -0.434 |    0.832 |    0.832 |   Weak
+  30.0% |   -1.797 |    0.345 |   -1.067 |    0.572 |    0.572 |   Weak
+  ======================================================================
+  *Neural: best config from architecture sweep (5x32)
+
+  7. FD SINDy structure loss at: 0%
+     Parameter generalization: 0/12
+
+  8. REAL MARKET DATA FINDINGS
+
+     Dividend Yield Discovery:
+       SPY (cached): q_implied=implausible, q_actual~0.0130, match=NO
+       QQQ (cached): q_implied=implausible, q_actual~0.0050, match=NO
+       AAPL (cached): q_implied=implausible, q_actual~0.0050, match=NO
+       MSFT (cached): q_implied=implausible, q_actual~0.0070, match=NO
+
+     Jump Dynamics (Merton Bridge):
+       SPY: closer to BS (cos_BS=-0.002, cos_Merton=-0.036, jump_est=0.9517)
+       QQQ: closer to Merton (cos_BS=-0.002, cos_Merton=0.292, jump_est=1.6089)
+       AAPL: closer to BS (cos_BS=-0.001, cos_Merton=-0.173, jump_est=0.7302)
+       MSFT: closer to Merton (cos_BS=-0.000, cos_Merton=0.998, jump_est=73.9573)
+
+     SPY IV Regime Analysis:
+       Term structure shape: flat
+       Maturity: Short (<=22.3%, Medium (=20.5%, Long (>6=21.8%
+       Moneyness: ATM (0.9=25.7%, OTM call=19.7%
+     QQQ IV Regime Analysis:
+       Term structure shape: upward
+       Maturity: Short (<=25.0%, Medium (=24.6%, Long (>6=28.3%
+       Moneyness: ATM (0.9=29.3%, OTM call=23.4%
+
+========================================================================
