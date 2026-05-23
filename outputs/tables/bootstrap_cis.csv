@@ -1,0 +1,6 @@
+term,point_estimate,ci_low,ci_high,ci_contains_zero
+V,0.0,0.0,0.0,True
+dV/dS,0.0,0.0,0.0,True
+d2V/dS2,-281.8279764285773,-284.8745405567744,-279.5238883135258,False
+S*dV/dS,0.0,0.0,0.0,True
+S2*d2V/dS2,0.0,0.0,0.0,True

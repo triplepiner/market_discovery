@@ -848,3 +848,335 @@ def discover_pde_reduced(V, S_grid, t_grid, true_sigma=None, true_r=None,
         'active_mask': best['active_mask'],
         'n_active': best['n_active'],
     }
+
+
+# ---------------------------------------------------------------------------
+# Advanced SINDy: ensemble, PCA, time-varying, CV thresholds, bootstrap CIs
+# ---------------------------------------------------------------------------
+
+
+def _build_library_and_target(V, S_grid, t_grid, smooth=True, trim=5,
+                              savgol_window=7, savgol_poly=3):
+    """Helper: compute derivatives, build the standard 5-term library and target."""
+    derivs = compute_derivatives(
+        V, S_grid, t_grid, smooth=smooth,
+        savgol_window=savgol_window, savgol_poly=savgol_poly, trim=trim,
+    )
+    library = build_candidate_library(
+        derivs['V'], derivs['dVdS'], derivs['d2VdS2'], derivs['S_mesh']
+    )
+    target = derivs['dVdt'].ravel()
+    return library, target, derivs
+
+
+def ensemble_sindy(V, S_grid, t_grid, threshold=0.1, n_bootstraps=50,
+                   subsample_frac=0.7, smooth=True, seed=42):
+    """
+    Ensemble SINDy via subsampling.
+
+    Run STLSQ on ``n_bootstraps`` random subsamples (without replacement) of
+    the rows of the candidate library/target.  Record which terms are active
+    and the coefficient values.  Compute per-term inclusion probability and
+    coefficient quantiles (median, 2.5%, 97.5%).  Final selected terms are
+    those with inclusion_probability > 0.6.
+
+    Returns
+    -------
+    dict with keys: term_names, inclusion_probabilities, median_coefficients,
+                    ci_low, ci_high, selected_terms, n_bootstraps
+    """
+    library, target, _ = _build_library_and_target(
+        V, S_grid, t_grid, smooth=smooth
+    )
+    n, p = library.shape
+    n_sub = max(p + 1, int(round(subsample_frac * n)))
+    n_sub = min(n_sub, n)
+
+    rng = np.random.default_rng(seed)
+    coeffs_runs = np.zeros((n_bootstraps, p))
+    active_runs = np.zeros((n_bootstraps, p), dtype=bool)
+
+    for b in range(n_bootstraps):
+        idx = rng.choice(n, size=n_sub, replace=False)
+        lib_b = library[idx]
+        tgt_b = target[idx]
+        coeffs, active = stlsq(lib_b, tgt_b, threshold)
+        coeffs_runs[b] = coeffs
+        active_runs[b] = active
+
+    inclusion_prob = active_runs.mean(axis=0)
+    median_coeffs = np.median(coeffs_runs, axis=0)
+    ci_low = np.percentile(coeffs_runs, 2.5, axis=0)
+    ci_high = np.percentile(coeffs_runs, 97.5, axis=0)
+
+    selected_terms = [TERM_NAMES[i] for i in range(p) if inclusion_prob[i] > 0.6]
+
+    logger.info(
+        f"Ensemble SINDy ({n_bootstraps} runs): inclusion probabilities = "
+        + ", ".join(f"{TERM_NAMES[i]}={inclusion_prob[i]:.2f}" for i in range(p))
+    )
+
+    return {
+        'term_names': list(TERM_NAMES),
+        'inclusion_probabilities': inclusion_prob,
+        'median_coefficients': median_coeffs,
+        'ci_low': ci_low,
+        'ci_high': ci_high,
+        'selected_terms': selected_terms,
+        'n_bootstraps': n_bootstraps,
+    }
+
+
+def pca_sindy(V, S_grid, t_grid, threshold=0.1, secondary_threshold=0.05,
+              smooth=True):
+    """
+    PCA-SINDy: standardize the library, project to PCA space, run STLSQ in
+    that orthogonal basis, then transform coefficients back to the original
+    library basis.
+
+    Returns
+    -------
+    dict with keys: discovered_coefficients, active_terms, r2_score,
+                    term_names, n_active
+    """
+    from sklearn.decomposition import PCA
+
+    library, target, _ = _build_library_and_target(
+        V, S_grid, t_grid, smooth=smooth
+    )
+    n, p = library.shape
+
+    # Standardize columns
+    mean = library.mean(axis=0)
+    std = library.std(axis=0)
+    std_safe = np.where(std < 1e-15, 1.0, std)
+    lib_std = (library - mean) / std_safe
+
+    # PCA
+    pca = PCA(n_components=p)
+    lib_pca = pca.fit_transform(lib_std)
+
+    # STLSQ in PCA space
+    pca_coeffs, _ = stlsq(lib_pca, target, threshold)
+
+    # Transform back to standardized space, then to original space
+    # lib_pca = (lib_std - pca.mean_) @ components_.T  (here pca.mean_ ~ 0)
+    # target ~= lib_pca @ pca_coeffs
+    #        = (lib_std - pca.mean_) @ components_.T @ pca_coeffs
+    # So coefficients in standardized basis: components_.T @ pca_coeffs
+    std_basis_coeffs = pca.components_.T @ pca_coeffs
+    # Map back to original (unstandardized) basis: c_orig_i = c_std_i / std_i
+    orig_coeffs = std_basis_coeffs / std_safe
+
+    # Apply secondary threshold (relative to max absolute coefficient)
+    max_abs = np.max(np.abs(orig_coeffs))
+    if max_abs > 0:
+        orig_coeffs[np.abs(orig_coeffs) < secondary_threshold * max_abs] = 0.0
+
+    # R^2
+    pred = library @ orig_coeffs
+    ss_res = np.sum((target - pred) ** 2)
+    ss_tot = np.sum((target - target.mean()) ** 2)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-30 else 0.0
+
+    active_mask = np.abs(orig_coeffs) > 0
+    active_terms = [TERM_NAMES[i] for i in range(p) if active_mask[i]]
+
+    logger.info(
+        f"PCA-SINDy: n_active={int(active_mask.sum())}, R^2={r2:.6f}"
+    )
+
+    return {
+        'discovered_coefficients': orig_coeffs,
+        'active_terms': active_terms,
+        'r2_score': float(r2),
+        'term_names': list(TERM_NAMES),
+        'n_active': int(active_mask.sum()),
+    }
+
+
+def time_varying_sindy(V, S_grid, t_grid, window_size=20, stride=5,
+                       threshold=0.1, smooth=True):
+    """
+    Time-varying SINDy: slide a window across the time axis and fit a SINDy
+    model on each slice.  Useful for detecting non-autonomous dynamics.
+
+    Returns
+    -------
+    dict with keys: window_centers, coefficients_per_window (n_windows x n_terms),
+                    r2_per_window, is_autonomous
+    """
+    n_t = len(t_grid)
+    if window_size > n_t:
+        raise ValueError(
+            f"window_size={window_size} exceeds n_t={n_t}"
+        )
+
+    starts = list(range(0, n_t - window_size + 1, stride))
+    window_centers = []
+    coeffs_list = []
+    r2_list = []
+
+    for start in starts:
+        end = start + window_size
+        V_win = V[:, start:end]
+        t_win = t_grid[start:end]
+        center = 0.5 * (t_win[0] + t_win[-1])
+        try:
+            result = discover_pde(
+                V_win, S_grid, t_win,
+                smooth=smooth,
+                # Use a smaller trim for short windows
+                trim=min(5, max(1, window_size // 6)),
+            )
+            coeffs_list.append(result['discovered_coefficients'])
+            r2_list.append(result['r2_score'])
+            window_centers.append(center)
+        except Exception as e:
+            logger.warning(f"Window at t={center:.3f} failed: {e}")
+            continue
+
+    coefficients_per_window = np.array(coeffs_list)  # (n_windows, n_terms)
+    r2_per_window = np.array(r2_list)
+    window_centers = np.array(window_centers)
+
+    # Autonomous score: max over the true-term indices (0, 3, 4) of std/|mean|.
+    # Low score => coefficients stable across windows => autonomous.
+    is_autonomous = True
+    autonomous_threshold = 0.15
+    if coefficients_per_window.size > 0:
+        scores = []
+        for idx in [0, 3, 4]:
+            col = coefficients_per_window[:, idx]
+            m = np.mean(col)
+            if abs(m) > 1e-10:
+                scores.append(float(np.std(col) / abs(m)))
+        if scores:
+            is_autonomous = bool(max(scores) < autonomous_threshold)
+
+    logger.info(
+        f"Time-varying SINDy: {len(coeffs_list)} windows, "
+        f"is_autonomous={is_autonomous}"
+    )
+
+    return {
+        'window_centers': window_centers,
+        'coefficients_per_window': coefficients_per_window,
+        'r2_per_window': r2_per_window,
+        'is_autonomous': is_autonomous,
+    }
+
+
+def cv_threshold_select(V, S_grid, t_grid, candidate_thresholds=None,
+                        n_folds=5, smooth=True, seed=42):
+    """
+    Cross-validated threshold selection.
+
+    For each candidate threshold, split row indices into ``n_folds`` folds,
+    train STLSQ on n_folds-1 folds and evaluate R^2 on the held-out fold.
+    Pick the threshold whose mean CV R^2 is highest among those tied for
+    the fewest active terms.
+
+    Returns
+    -------
+    best_threshold : float
+    cv_scores : dict {threshold -> mean_cv_r2}
+    """
+    if candidate_thresholds is None:
+        candidate_thresholds = np.logspace(-3, 0, 10)
+
+    library, target, _ = _build_library_and_target(
+        V, S_grid, t_grid, smooth=smooth
+    )
+    n, p = library.shape
+
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(n)
+    fold_size = n // n_folds
+    folds = [perm[i * fold_size:(i + 1) * fold_size] for i in range(n_folds)]
+    # Remainder goes into the last fold
+    if n_folds * fold_size < n:
+        folds[-1] = np.concatenate([folds[-1], perm[n_folds * fold_size:]])
+
+    cv_scores = {}
+    n_active_per_thr = {}
+    for thr in candidate_thresholds:
+        fold_r2s = []
+        fold_active = []
+        for k in range(n_folds):
+            test_idx = folds[k]
+            train_mask = np.ones(n, dtype=bool)
+            train_mask[test_idx] = False
+            lib_tr = library[train_mask]
+            tgt_tr = target[train_mask]
+            lib_te = library[test_idx]
+            tgt_te = target[test_idx]
+
+            coeffs, active = stlsq(lib_tr, tgt_tr, thr)
+            pred = lib_te @ coeffs
+            ss_res = np.sum((tgt_te - pred) ** 2)
+            ss_tot = np.sum((tgt_te - tgt_te.mean()) ** 2)
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-30 else 0.0
+            fold_r2s.append(r2)
+            fold_active.append(int(np.sum(active)))
+
+        cv_scores[float(thr)] = float(np.mean(fold_r2s))
+        n_active_per_thr[float(thr)] = float(np.mean(fold_active))
+
+    # Tie-break: fewest active terms, then highest CV score
+    min_active = min(n_active_per_thr.values())
+    # Allow a tolerance of 0.5 (since the fold averages can be fractional)
+    tied = [t for t, k in n_active_per_thr.items() if k <= min_active + 0.5]
+    best_threshold = max(tied, key=lambda t: cv_scores[t])
+
+    logger.info(
+        f"CV threshold selection: best={best_threshold:.4f} "
+        f"(CV R^2={cv_scores[best_threshold]:.4f})"
+    )
+
+    return float(best_threshold), cv_scores
+
+
+def bootstrap_confidence_intervals(V, S_grid, t_grid, threshold=0.1,
+                                   n_bootstraps=100, smooth=True, seed=42):
+    """
+    Bootstrap 95% confidence intervals for each library coefficient at a
+    fixed threshold.
+
+    Returns
+    -------
+    pandas.DataFrame with columns: term, point_estimate, ci_low, ci_high,
+                                   ci_contains_zero
+    """
+    import pandas as pd
+
+    library, target, _ = _build_library_and_target(
+        V, S_grid, t_grid, smooth=smooth
+    )
+    n, p = library.shape
+
+    # Point estimate on the full dataset
+    point_coeffs, _ = stlsq(library, target, threshold)
+
+    rng = np.random.default_rng(seed)
+    boot_coeffs = np.zeros((n_bootstraps, p))
+    for b in range(n_bootstraps):
+        idx = rng.integers(0, n, size=n)  # with replacement
+        lib_b = library[idx]
+        tgt_b = target[idx]
+        c, _ = stlsq(lib_b, tgt_b, threshold)
+        boot_coeffs[b] = c
+
+    ci_low = np.percentile(boot_coeffs, 2.5, axis=0)
+    ci_high = np.percentile(boot_coeffs, 97.5, axis=0)
+
+    df = pd.DataFrame({
+        'term': TERM_NAMES,
+        'point_estimate': point_coeffs,
+        'ci_low': ci_low,
+        'ci_high': ci_high,
+        'ci_contains_zero': (ci_low <= 0) & (ci_high >= 0),
+    })
+
+    logger.info(f"Bootstrap CIs computed from {n_bootstraps} resamples")
+    return df

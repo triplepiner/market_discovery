@@ -1,0 +1,2 @@
+status,reason,r2_score,symbolic_expression
+skipped,PySR unavailable: No module named 'pysr',,

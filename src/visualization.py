@@ -2217,3 +2217,212 @@ def plot_dividend_discovery(div_results):
     except Exception as e:
         logger.warning(f"plot_dividend_discovery failed: {e}")
         return None
+
+
+def plot_residual_heatmap(V, S_grid, t_grid, discovered_coefficients,
+                          term_names, output_filename, K=100, title=None):
+    """
+    Compute and plot PDE residual |dV/dt - sum(coef_i * library_i)| as a heatmap.
+
+    Overlays contour lines of V for context, marks the ATM line (S=K) with a
+    vertical dashed white line, and annotates the top 3 "hot spots" (residual
+    peaks exceeding 3 standard deviations) with red circles.
+
+    Parameters
+    ----------
+    V : ndarray, shape (n_S, n_t)
+        Option price surface.
+    S_grid : ndarray, shape (n_S,)
+    t_grid : ndarray, shape (n_t,)
+    discovered_coefficients : array-like
+        Coefficients corresponding to the 5-term library
+        [V, dV/dS, d2V/dS2, S*dV/dS, S^2*d2V/dS2].
+    term_names : list of str
+        Names of the candidate library terms (used in the title).
+    output_filename : str
+        Filename (e.g., 'residual_clean.png') saved under outputs/figures/.
+    K : float, optional
+        Strike price for the ATM line. Default 100.
+    title : str or None, optional
+        Plot title. Defaults to a generic descriptive title.
+
+    Returns
+    -------
+    str
+        Absolute path to the saved figure.
+    """
+    # Import here to avoid circular import at module load time.
+    from src.sindy_discovery import compute_derivatives
+
+    derivs = compute_derivatives(V, S_grid, t_grid, smooth=False, trim=5)
+    V_tr = derivs['V']
+    dVdt = derivs['dVdt']
+    dVdS = derivs['dVdS']
+    d2VdS2 = derivs['d2VdS2']
+    S_mesh = derivs['S_mesh']
+    S_tr = derivs['S_grid']
+    t_tr = derivs['t_grid']
+
+    coeffs = np.asarray(discovered_coefficients, dtype=float).ravel()
+    if coeffs.size != 5:
+        raise ValueError(
+            f"Expected 5 discovered coefficients, got {coeffs.size}"
+        )
+
+    # Build the 5-term library directly on the 2D grid (no flatten).
+    lib_terms = [
+        V_tr,
+        dVdS,
+        d2VdS2,
+        S_mesh * dVdS,
+        S_mesh ** 2 * d2VdS2,
+    ]
+    predicted = sum(c * term for c, term in zip(coeffs, lib_terms))
+    residual = np.abs(dVdt - predicted)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(9, 6))
+
+    extent = [t_tr[0], t_tr[-1], S_tr[0], S_tr[-1]]
+    im = ax.imshow(
+        residual,
+        origin='lower',
+        aspect='auto',
+        extent=extent,
+        cmap='YlOrRd',
+        interpolation='nearest',
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label('|Residual|', fontsize=FONTSIZE_LABEL)
+
+    # Contour lines of V for context.
+    try:
+        T_mesh_plot, S_mesh_plot = np.meshgrid(t_tr, S_tr, indexing='xy')
+        # V_tr is (n_S, n_t); contour expects (X, Y, Z) with Z shape (len(Y), len(X)).
+        cs = ax.contour(
+            T_mesh_plot, S_mesh_plot, V_tr,
+            levels=8, colors='black', alpha=0.35, linewidths=0.6,
+        )
+        ax.clabel(cs, inline=True, fontsize=7, fmt='%.0f')
+    except Exception as e:
+        logger.debug(f"Contour overlay failed: {e}")
+
+    # ATM line at S = K (only if it falls inside the trimmed S range).
+    # Note: S is plotted on the y-axis here, so use axhline for the ATM line.
+    if S_tr[0] <= K <= S_tr[-1]:
+        ax.axhline(y=K, color='white', linestyle='--', linewidth=1.5,
+                   alpha=0.9, label=f'ATM (S=K={K:g})')
+        ax.legend(loc='upper right', fontsize=9)
+
+    # Annotate top-3 hot spots where residual > 3 sigma.
+    res_mean = float(np.mean(residual))
+    res_std = float(np.std(residual))
+    hot_threshold = res_mean + 3.0 * res_std
+    flat = residual.ravel()
+    # Sort indices descending by residual magnitude.
+    order = np.argsort(flat)[::-1]
+    spots_marked = 0
+    for idx in order:
+        if spots_marked >= 3:
+            break
+        if flat[idx] <= hot_threshold:
+            break
+        i, j = np.unravel_index(idx, residual.shape)
+        s_pt = S_tr[i]
+        t_pt = t_tr[j]
+        ax.scatter(
+            [t_pt], [s_pt],
+            s=180, facecolors='none', edgecolors='red', linewidths=2.0,
+            zorder=5,
+        )
+        spots_marked += 1
+
+    ax.set_xlabel('Time t (years)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Stock Price S ($)', fontsize=FONTSIZE_LABEL)
+    if title is None:
+        title = 'PDE Residual Heatmap'
+    ax.set_title(title, fontsize=FONTSIZE_TITLE)
+
+    fig.tight_layout()
+    return _savefig(fig, output_filename)
+
+
+def generate_all_residual_maps(clean_data=None, noisy_data=None,
+                               merton_data=None, real_data_dict=None,
+                               clean_sindy=None, noisy_sindy=None,
+                               merton_sindy=None, real_sindy=None,
+                               K=100):
+    """
+    Generate residual heatmaps for up to four datasets.
+
+    Each dataset is expected to be a tuple/dict with keys 'V', 'S_grid',
+    't_grid' (or a 3-tuple in that order). The corresponding sindy_results
+    must contain 'discovered_coefficients' and 'term_names'. Real data may
+    be a dict keyed by ticker (e.g. {'SPY': {...}}); only the SPY entry
+    is rendered.
+
+    Each plot is wrapped in try/except so a single failure does not abort
+    the others. Returns a dict mapping output filename -> saved path (or
+    None on failure / skipped).
+    """
+    def _unpack(data):
+        if data is None:
+            return None
+        if isinstance(data, dict):
+            return data.get('V'), data.get('S_grid'), data.get('t_grid')
+        if isinstance(data, (tuple, list)) and len(data) >= 3:
+            return data[0], data[1], data[2]
+        return None
+
+    def _run_one(data, sindy_res, fname, plot_title):
+        try:
+            unpacked = _unpack(data)
+            if unpacked is None or sindy_res is None:
+                logger.info(f"Skipping {fname}: missing data or sindy results.")
+                return None
+            V, S_grid, t_grid = unpacked
+            if V is None or S_grid is None or t_grid is None:
+                logger.info(f"Skipping {fname}: incomplete data tuple.")
+                return None
+            coeffs = sindy_res.get('discovered_coefficients')
+            term_names = sindy_res.get('term_names')
+            if coeffs is None or term_names is None:
+                logger.info(
+                    f"Skipping {fname}: sindy results missing coefficients/term_names."
+                )
+                return None
+            return plot_residual_heatmap(
+                V, S_grid, t_grid, coeffs, term_names, fname,
+                K=K, title=plot_title,
+            )
+        except Exception as e:
+            logger.warning(f"generate_all_residual_maps: {fname} failed: {e}")
+            return None
+
+    results = {}
+    results['residual_clean.png'] = _run_one(
+        clean_data, clean_sindy, 'residual_clean.png',
+        'PDE Residual: Clean BS Surface',
+    )
+    results['residual_noisy_5pct.png'] = _run_one(
+        noisy_data, noisy_sindy, 'residual_noisy_5pct.png',
+        'PDE Residual: Noisy BS Surface (5%)',
+    )
+    results['residual_merton.png'] = _run_one(
+        merton_data, merton_sindy, 'residual_merton.png',
+        'PDE Residual: Merton Jump-Diffusion Surface',
+    )
+
+    # Real data: only emit SPY plot if SPY entry exists.
+    if real_data_dict and isinstance(real_data_dict, dict) and 'SPY' in real_data_dict:
+        spy_sindy = None
+        if isinstance(real_sindy, dict) and 'SPY' in real_sindy:
+            spy_sindy = real_sindy['SPY']
+        else:
+            spy_sindy = real_sindy
+        results['residual_real_spy.png'] = _run_one(
+            real_data_dict['SPY'], spy_sindy, 'residual_real_spy.png',
+            'PDE Residual: Real SPY Surface',
+        )
+
+    return results

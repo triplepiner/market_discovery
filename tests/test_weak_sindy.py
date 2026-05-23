@@ -134,3 +134,71 @@ class TestWeakSindyNoiseRobustness:
         ratio = result_noisy['r2_score'] / max(result_clean['r2_score'], 1e-10)
         assert ratio > 0.5, \
             f"Noise degradation ratio = {ratio:.2f}, expected > 0.5"
+
+
+class TestSpectralTestFunctionsShape:
+    def test_spectral_test_functions_shape(self):
+        """Spectral test functions: correct count and per-mode shape."""
+        from src.weak_sindy import build_spectral_test_functions
+
+        S_grid = np.linspace(50, 150, 30)
+        t_grid = np.linspace(0, 0.99, 30)
+
+        n_modes_S, n_modes_t = 6, 5
+        tfs = build_spectral_test_functions(
+            S_grid, t_grid, n_modes_S=n_modes_S, n_modes_t=n_modes_t
+        )
+
+        assert len(tfs) == n_modes_S * n_modes_t
+        for tf in tfs:
+            assert tf['phi'].shape == (30, 30)
+            assert tf['dphi_dS'].shape == (30, 30)
+            assert tf['d2phi_dS2'].shape == (30, 30)
+            assert tf['dphi_dt'].shape == (30, 30)
+            assert tf['phi'].dtype == np.float64
+
+
+class TestSpectralWeakSindyClean:
+    def test_spectral_weak_sindy_clean_data(self):
+        """Spectral weak SINDy achieves R² > 0.7 on clean BS data."""
+        from src.weak_sindy import weak_sindy_spectral_discover
+
+        set_all_seeds(42)
+        V, S_grid, t_grid = generate_price_surface(
+            n_S=30, n_t=30, K=100, r=0.05, sigma=0.2, T=1.0
+        )
+
+        result = weak_sindy_spectral_discover(
+            V, S_grid, t_grid,
+            n_modes_S=8, n_modes_t=8,
+            true_sigma=0.2, true_r=0.05, seed=42,
+        )
+
+        assert result['r2_score'] > 0.7, \
+            f"Spectral weak SINDy R² = {result['r2_score']:.4f}, expected > 0.7"
+        assert result['n_active'] >= 1
+
+
+class TestAdaptiveWidthIncreasesWithNoise:
+    def test_adaptive_width_increases_with_noise(self):
+        """Adaptive width_factor is larger at higher estimated noise."""
+        from src.weak_sindy import adaptive_width_weak_sindy
+
+        set_all_seeds(42)
+        V_clean, S_grid, t_grid = generate_price_surface(
+            n_S=30, n_t=30, K=100, r=0.05, sigma=0.2, T=1.0
+        )
+
+        res_low = adaptive_width_weak_sindy(
+            V_clean, S_grid, t_grid,
+            estimated_noise=0.01, seed=42,
+        )
+        res_high = adaptive_width_weak_sindy(
+            V_clean, S_grid, t_grid,
+            estimated_noise=0.10, seed=42,
+        )
+
+        assert res_high['width_factor_used'] > res_low['width_factor_used'], (
+            f"Expected width_factor(noise=0.1)={res_high['width_factor_used']} "
+            f"> width_factor(noise=0.01)={res_low['width_factor_used']}"
+        )

@@ -1,0 +1,6 @@
+term,inclusion_probability,median_coefficient,ci_low,ci_high
+V,0.0,0.0,0.0,0.0
+dV/dS,0.0,0.0,0.0,0.0
+d2V/dS2,1.0,-282.0646530769546,-284.00716466908784,-280.5541263760051
+S*dV/dS,0.0,0.0,0.0,0.0
+S2*d2V/dS2,0.0,0.0,0.0,0.0

@@ -1379,3 +1379,603 @@ def analyze_pinn_errors(pinn_result, K=100.0):
     )
 
     return analysis
+
+
+# ---------------------------------------------------------------------------
+# Improvement #16 -- Warmup learning-rate schedule
+# ---------------------------------------------------------------------------
+
+def _make_warmup_lr_lambda(warmup_epochs=1000, target_lr=1e-3, initial_lr=1e-4):
+    """
+    Build a learning-rate multiplier function for ``torch.optim.lr_scheduler.LambdaLR``.
+
+    Linearly ramps the LR multiplier from ``initial_lr / target_lr`` up to ``1.0``
+    over ``warmup_epochs`` epochs, then holds constant at ``1.0``.
+
+    Notes
+    -----
+    The Adam optimizer is created with ``lr=target_lr``. The lambda returned
+    here multiplies that base LR.  At epoch 0 the multiplier corresponds to
+    ``initial_lr`` and at epoch ``warmup_epochs`` it corresponds to
+    ``target_lr``.
+
+    Parameters
+    ----------
+    warmup_epochs : int
+        Number of epochs over which to ramp.
+    target_lr : float
+        The target (peak) learning rate -- matches the optimizer's base LR.
+    initial_lr : float
+        The starting learning rate.
+
+    Returns
+    -------
+    callable
+        A function ``lr_lambda(epoch) -> float`` suitable for ``LambdaLR``.
+    """
+    if target_lr <= 0:
+        raise ValueError("target_lr must be positive.")
+    start_ratio = float(initial_lr) / float(target_lr)
+    warmup_epochs = max(int(warmup_epochs), 1)
+
+    def lr_lambda(epoch):
+        if epoch >= warmup_epochs:
+            return 1.0
+        # Linear interpolation from start_ratio at epoch=0 to 1.0 at warmup_epochs
+        return start_ratio + (1.0 - start_ratio) * (epoch / warmup_epochs)
+
+    return lr_lambda
+
+
+# ---------------------------------------------------------------------------
+# Improvement #2 -- Hard-constraint PINN
+# ---------------------------------------------------------------------------
+
+class HardConstraintPINN(nn.Module):
+    """
+    Hard-constraint PINN that bakes the terminal payoff into the architecture.
+
+    The output is constructed as::
+
+        V(S, t) = payoff(S) + (T - t) * raw_network(S, t)
+
+    so that at ``t = T`` the network output is *exactly* equal to the payoff,
+    regardless of the network's weights.  This removes the need for a strong
+    terminal-condition penalty in the loss.
+
+    Parameters
+    ----------
+    S_min, S_max : float
+        Stock price domain bounds (used for input normalisation).
+    t_min, t_max : float
+        Time domain bounds (used for input normalisation).
+    T : float
+        Option maturity time.  The factor ``(T - t)`` vanishes at ``t = T``.
+    K : float
+        Strike price for the payoff.
+    option_type : str
+        ``'call'`` or ``'put'``.
+    width : int
+        Hidden-layer width (default 64).  Tests may pass a smaller value.
+    """
+
+    def __init__(self, S_min, S_max, t_min, t_max, T, K,
+                 option_type='call', width=64):
+        super().__init__()
+
+        self.register_buffer('S_min', torch.tensor(S_min, dtype=torch.float64))
+        self.register_buffer('S_max', torch.tensor(S_max, dtype=torch.float64))
+        self.register_buffer('t_min', torch.tensor(t_min, dtype=torch.float64))
+        self.register_buffer('t_max', torch.tensor(t_max, dtype=torch.float64))
+        self.register_buffer('T', torch.tensor(T, dtype=torch.float64))
+        self.register_buffer('K', torch.tensor(K, dtype=torch.float64))
+
+        if option_type not in ('call', 'put'):
+            raise ValueError("option_type must be 'call' or 'put'.")
+        self.option_type = option_type
+
+        self.net = nn.Sequential(
+            nn.Linear(2, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, 1),
+        ).double()
+
+        for m in self.net:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def payoff(self, S):
+        """Compute the terminal payoff for the given stock prices."""
+        if self.option_type == 'call':
+            return torch.clamp(S - self.K, min=0.0)
+        return torch.clamp(self.K - S, min=0.0)
+
+    def forward(self, S, t):
+        S_norm = (S - self.S_min) / (self.S_max - self.S_min + 1e-30)
+        t_norm = (t - self.t_min) / (self.t_max - self.t_min + 1e-30)
+        x = torch.cat([S_norm, t_norm], dim=-1)
+        raw = self.net(x)
+        # (T - t) factor ensures payoff is exact at maturity
+        tau = self.T - t
+        return self.payoff(S) + tau * raw
+
+
+# ---------------------------------------------------------------------------
+# Improvement #8 -- Log-price PINN
+# ---------------------------------------------------------------------------
+
+class LogPricePINN(nn.Module):
+    """
+    PINN that operates in log-price coordinates ``x = log(S)``.
+
+    The Black-Scholes PDE has constant coefficients in log-price space, which
+    can improve PINN trainability.  The forward method accepts the *raw*
+    stock price ``S`` and time ``t`` and internally computes ``x = log(S)``
+    before feeding into the network.
+
+    Parameters
+    ----------
+    S_min, S_max : float
+        Stock price domain bounds.  Used to derive ``x_min = log(S_min)``,
+        ``x_max = log(S_max)`` for input normalisation.
+    t_min, t_max : float
+        Time domain bounds.
+    T : float
+        Option maturity.
+    K : float
+        Strike price (used for the optional hard-constraint payoff).
+    option_type : str
+        ``'call'`` or ``'put'``.
+    use_hard_constraint : bool
+        If True, output is ``payoff(S) + (T - t) * raw(x, t)``.
+    width : int
+        Hidden-layer width.
+    """
+
+    def __init__(self, S_min, S_max, t_min, t_max, T, K,
+                 option_type='call', use_hard_constraint=False, width=64):
+        super().__init__()
+
+        if S_min <= 0:
+            raise ValueError("S_min must be > 0 for log-price PINN.")
+
+        self.register_buffer('S_min', torch.tensor(S_min, dtype=torch.float64))
+        self.register_buffer('S_max', torch.tensor(S_max, dtype=torch.float64))
+        self.register_buffer('x_min', torch.tensor(np.log(S_min), dtype=torch.float64))
+        self.register_buffer('x_max', torch.tensor(np.log(S_max), dtype=torch.float64))
+        self.register_buffer('t_min', torch.tensor(t_min, dtype=torch.float64))
+        self.register_buffer('t_max', torch.tensor(t_max, dtype=torch.float64))
+        self.register_buffer('T', torch.tensor(T, dtype=torch.float64))
+        self.register_buffer('K', torch.tensor(K, dtype=torch.float64))
+
+        if option_type not in ('call', 'put'):
+            raise ValueError("option_type must be 'call' or 'put'.")
+        self.option_type = option_type
+        self.use_hard_constraint = bool(use_hard_constraint)
+
+        self.net = nn.Sequential(
+            nn.Linear(2, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, width),
+            nn.Tanh(),
+            nn.Linear(width, 1),
+        ).double()
+
+        for m in self.net:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def payoff(self, S):
+        if self.option_type == 'call':
+            return torch.clamp(S - self.K, min=0.0)
+        return torch.clamp(self.K - S, min=0.0)
+
+    def forward(self, S, t):
+        # x = log(S); normalise to [0, 1]
+        x = torch.log(S)
+        x_norm = (x - self.x_min) / (self.x_max - self.x_min + 1e-30)
+        t_norm = (t - self.t_min) / (self.t_max - self.t_min + 1e-30)
+        inp = torch.cat([x_norm, t_norm], dim=-1)
+        raw = self.net(inp)
+        if self.use_hard_constraint:
+            tau = self.T - t
+            return self.payoff(S) + tau * raw
+        return raw
+
+
+# ---------------------------------------------------------------------------
+# Shared training utilities for the hard-constraint / log-price trainers
+# ---------------------------------------------------------------------------
+
+def _bs_pde_residual(model, S, t, r, sigma):
+    """
+    Compute the Black-Scholes PDE residual for a model that returns V(S, t).
+
+    Uses the *true* BS coefficients (r and sigma) rather than discovered
+    coefficients so these trainers can be used standalone.
+
+    Residual: dV/dt + 0.5*sigma^2*S^2*d2V/dS2 + r*S*dV/dS - r*V
+    """
+    V = model(S, t)
+
+    dV_dt = torch.autograd.grad(
+        V, t, grad_outputs=torch.ones_like(V),
+        create_graph=True, retain_graph=True,
+    )[0]
+    dV_dS = torch.autograd.grad(
+        V, S, grad_outputs=torch.ones_like(V),
+        create_graph=True, retain_graph=True,
+    )[0]
+    d2V_dS2 = torch.autograd.grad(
+        dV_dS, S, grad_outputs=torch.ones_like(dV_dS),
+        create_graph=True, retain_graph=True,
+    )[0]
+
+    residual = dV_dt + 0.5 * sigma ** 2 * S ** 2 * d2V_dS2 + r * S * dV_dS - r * V
+    return residual
+
+
+def _prepare_split(S_flat, t_flat, V_flat, device):
+    """60/20/20 split matching the existing PINNTrainer convention."""
+    N = len(S_flat)
+    idx = np.arange(N)
+    idx_train, idx_temp = train_test_split(idx, train_size=0.6, random_state=42)
+    idx_val, idx_test = train_test_split(idx_temp, train_size=0.5, random_state=42)
+
+    def _t(arr):
+        return torch.tensor(arr, dtype=torch.float64, device=device).unsqueeze(-1)
+
+    return (
+        _t(S_flat[idx_train]), _t(t_flat[idx_train]), _t(V_flat[idx_train]),
+        _t(S_flat[idx_val]),   _t(t_flat[idx_val]),   _t(V_flat[idx_val]),
+        _t(S_flat[idx_test]),  _t(t_flat[idx_test]),  _t(V_flat[idx_test]),
+    )
+
+
+def _generate_grid_and_truth(option_type, K, r, sigma, T,
+                             S_min, S_max, n_S=30, n_t=30):
+    """Build a (S, t) grid plus the analytical option-price surface."""
+    S_grid = np.linspace(S_min, S_max, n_S)
+    t_grid = np.linspace(0.0, T - 0.01, n_t)
+    S_mesh, t_mesh = np.meshgrid(S_grid, t_grid, indexing='ij')
+    tau = T - t_mesh
+    if option_type == 'call':
+        V = bs_call_price(S_mesh, K, r, sigma, tau)
+    else:
+        V = bs_put_price(S_mesh, K, r, sigma, tau)
+    return S_grid, t_grid, S_mesh, t_mesh, V
+
+
+def _generic_train_loop(model, S_train, t_train, V_train,
+                        S_val, t_val, V_val,
+                        S_min, S_max, t_min, t_max,
+                        r, sigma, T, K, option_type,
+                        n_epochs, lr, lambda_pde, lambda_bc, lambda_data,
+                        n_collocation, device, use_warmup,
+                        warmup_epochs=1000, warmup_initial_lr=1e-4):
+    """
+    Shared training loop used by both hard-constraint and log-price trainers.
+
+    Returns
+    -------
+    (train_loss_history, val_loss_history)
+    """
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = None
+    if use_warmup:
+        lr_lambda = _make_warmup_lr_lambda(
+            warmup_epochs=warmup_epochs,
+            target_lr=lr,
+            initial_lr=warmup_initial_lr,
+        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+    train_loss_history = []
+    val_loss_history = []
+
+    model.train()
+    for epoch in range(n_epochs):
+        # Sample collocation points (fresh each epoch -- cheap on CPU)
+        S_col = (torch.rand(n_collocation, 1, dtype=torch.float64, device=device)
+                 * (S_max - S_min) + S_min)
+        t_col = (torch.rand(n_collocation, 1, dtype=torch.float64, device=device)
+                 * (t_max - t_min) + t_min)
+        S_col.requires_grad_(True)
+        t_col.requires_grad_(True)
+
+        optimizer.zero_grad()
+
+        # PDE residual
+        residual = _bs_pde_residual(model, S_col, t_col, r, sigma)
+        loss_pde = torch.mean(residual ** 2)
+
+        # Data loss
+        V_pred_data = model(S_train, t_train)
+        loss_data = torch.mean((V_pred_data - V_train) ** 2)
+
+        # Boundary loss -- much smaller weight since architecture handles
+        # the terminal condition (for hard-constraint) or because we're
+        # mainly relying on data + PDE
+        if lambda_bc > 0:
+            n_bc = 100
+            t_bc = (torch.rand(n_bc, 1, dtype=torch.float64, device=device)
+                    * (t_max - t_min) + t_min)
+            S_lo = torch.full((n_bc, 1), S_min, dtype=torch.float64, device=device)
+            S_hi = torch.full((n_bc, 1), S_max, dtype=torch.float64, device=device)
+            V_lo = model(S_lo, t_bc)
+            V_hi = model(S_hi, t_bc)
+            tau_bc = T - t_bc
+            if option_type == 'call':
+                V_lo_true = torch.zeros_like(V_lo)
+                V_hi_true = S_hi - K * torch.exp(-r * tau_bc)
+            else:
+                V_lo_true = K * torch.exp(-r * tau_bc)
+                V_hi_true = torch.zeros_like(V_hi)
+            loss_bc = (torch.mean((V_lo - V_lo_true) ** 2)
+                       + torch.mean((V_hi - V_hi_true) ** 2))
+        else:
+            loss_bc = torch.tensor(0.0, dtype=torch.float64, device=device)
+
+        total = (lambda_pde * loss_pde
+                 + lambda_data * loss_data
+                 + lambda_bc * loss_bc)
+
+        total.backward()
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+
+        train_loss_history.append(float(total.item()))
+
+        with torch.no_grad():
+            V_pred_val = model(S_val, t_val)
+            v_loss = torch.mean((V_pred_val - V_val) ** 2).item()
+            val_loss_history.append(float(v_loss))
+
+    return train_loss_history, val_loss_history
+
+
+def _evaluate_metrics(model, S_test, t_test, V_test):
+    model.eval()
+    with torch.no_grad():
+        V_pred = model(S_test, t_test)
+        diff = V_pred - V_test
+        l2 = (torch.norm(diff) / (torch.norm(V_test) + 1e-30)).item()
+        mae = torch.mean(torch.abs(diff)).item()
+        ss_res = torch.sum(diff ** 2)
+        ss_tot = torch.sum((V_test - torch.mean(V_test)) ** 2)
+        r2 = (1.0 - ss_res / (ss_tot + 1e-30)).item()
+    return {'relative_l2_error': float(l2), 'mae': float(mae), 'r2': float(r2)}
+
+
+def _boundary_error_at_maturity(model, K, S_min, S_max, T, option_type, n=200):
+    """Average |V(S, T) - payoff(S)| over a grid."""
+    model.eval()
+    S = torch.linspace(S_min, S_max, n, dtype=torch.float64).unsqueeze(-1)
+    t = torch.full((n, 1), T, dtype=torch.float64)
+    with torch.no_grad():
+        V_pred = model(S, t).squeeze().numpy()
+    S_np = S.squeeze().numpy()
+    if option_type == 'call':
+        payoff = np.maximum(S_np - K, 0.0)
+    else:
+        payoff = np.maximum(K - S_np, 0.0)
+    return float(np.mean(np.abs(V_pred - payoff)))
+
+
+# ---------------------------------------------------------------------------
+# train_hard_constraint_pinn (Improvement #2)
+# ---------------------------------------------------------------------------
+
+def train_hard_constraint_pinn(
+    option_type='call',
+    K=100.0,
+    r=0.05,
+    sigma=0.2,
+    T=1.0,
+    S_min=10.0,
+    S_max=200.0,
+    n_epochs=5000,
+    lr=1e-3,
+    seed=42,
+    device='cpu',
+    use_warmup=False,
+    n_S=30,
+    n_t=30,
+    width=64,
+    n_collocation=2000,
+    lambda_pde=1.0,
+    lambda_bc=0.1,
+    lambda_data=1.0,
+    warmup_epochs=1000,
+    warmup_initial_lr=1e-4,
+):
+    """
+    Train a HardConstraintPINN on the Black-Scholes PDE.
+
+    Because the terminal payoff is enforced exactly by the architecture, the
+    boundary-loss weight is reduced (default ``lambda_bc=0.1``).
+
+    Returns
+    -------
+    dict with keys:
+        - model
+        - train_loss_history
+        - val_loss_history
+        - test_metrics: {relative_l2_error, mae, r2}
+        - boundary_error
+    """
+    try:
+        set_all_seeds(seed)
+        torch.manual_seed(seed)
+        dev = torch.device(device)
+
+        S_grid, t_grid, S_mesh, t_mesh, V = _generate_grid_and_truth(
+            option_type, K, r, sigma, T, S_min, S_max, n_S=n_S, n_t=n_t,
+        )
+        t_min = float(t_grid.min())
+        t_max = float(t_grid.max())
+
+        S_flat = S_mesh.ravel().astype(np.float64)
+        t_flat = t_mesh.ravel().astype(np.float64)
+        V_flat = V.ravel().astype(np.float64)
+
+        (S_tr, t_tr, V_tr,
+         S_va, t_va, V_va,
+         S_te, t_te, V_te) = _prepare_split(S_flat, t_flat, V_flat, dev)
+
+        model = HardConstraintPINN(
+            S_min=S_min, S_max=S_max, t_min=t_min, t_max=t_max,
+            T=T, K=K, option_type=option_type, width=width,
+        ).to(dev)
+
+        train_hist, val_hist = _generic_train_loop(
+            model,
+            S_tr, t_tr, V_tr, S_va, t_va, V_va,
+            S_min, S_max, t_min, t_max,
+            r, sigma, T, K, option_type,
+            n_epochs, lr, lambda_pde, lambda_bc, lambda_data,
+            n_collocation, dev, use_warmup,
+            warmup_epochs=warmup_epochs,
+            warmup_initial_lr=warmup_initial_lr,
+        )
+
+        test_metrics = _evaluate_metrics(model, S_te, t_te, V_te)
+        boundary_error = _boundary_error_at_maturity(
+            model, K, S_min, S_max, T, option_type,
+        )
+
+        return {
+            'model': model,
+            'train_loss_history': train_hist,
+            'val_loss_history': val_hist,
+            'test_metrics': test_metrics,
+            'boundary_error': boundary_error,
+            'option_type': option_type,
+            'used_warmup': bool(use_warmup),
+        }
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("train_hard_constraint_pinn failed: %s", exc)
+        return {
+            'model': None,
+            'train_loss_history': [],
+            'val_loss_history': [],
+            'test_metrics': {'relative_l2_error': float('nan'),
+                             'mae': float('nan'), 'r2': float('nan')},
+            'boundary_error': float('nan'),
+            'error': str(exc),
+        }
+
+
+# ---------------------------------------------------------------------------
+# train_log_price_pinn (Improvement #8)
+# ---------------------------------------------------------------------------
+
+def train_log_price_pinn(
+    option_type='call',
+    K=100.0,
+    r=0.05,
+    sigma=0.2,
+    T=1.0,
+    S_min=10.0,
+    S_max=200.0,
+    n_epochs=5000,
+    lr=1e-3,
+    seed=42,
+    device='cpu',
+    use_hard_constraint=False,
+    use_warmup=False,
+    n_S=30,
+    n_t=30,
+    width=64,
+    n_collocation=2000,
+    lambda_pde=1.0,
+    lambda_bc=0.1,
+    lambda_data=1.0,
+    warmup_epochs=1000,
+    warmup_initial_lr=1e-4,
+):
+    """
+    Train a LogPricePINN.  If ``use_hard_constraint=True`` the architecture
+    also bakes in the terminal payoff.
+
+    Returns the same dict shape as :func:`train_hard_constraint_pinn`.
+    """
+    try:
+        set_all_seeds(seed)
+        torch.manual_seed(seed)
+        dev = torch.device(device)
+
+        S_grid, t_grid, S_mesh, t_mesh, V = _generate_grid_and_truth(
+            option_type, K, r, sigma, T, S_min, S_max, n_S=n_S, n_t=n_t,
+        )
+        t_min = float(t_grid.min())
+        t_max = float(t_grid.max())
+
+        S_flat = S_mesh.ravel().astype(np.float64)
+        t_flat = t_mesh.ravel().astype(np.float64)
+        V_flat = V.ravel().astype(np.float64)
+
+        (S_tr, t_tr, V_tr,
+         S_va, t_va, V_va,
+         S_te, t_te, V_te) = _prepare_split(S_flat, t_flat, V_flat, dev)
+
+        model = LogPricePINN(
+            S_min=S_min, S_max=S_max, t_min=t_min, t_max=t_max,
+            T=T, K=K, option_type=option_type,
+            use_hard_constraint=use_hard_constraint,
+            width=width,
+        ).to(dev)
+
+        # If using hard constraint we can de-emphasise the bc loss
+        effective_lambda_bc = lambda_bc if not use_hard_constraint else min(lambda_bc, 0.1)
+
+        train_hist, val_hist = _generic_train_loop(
+            model,
+            S_tr, t_tr, V_tr, S_va, t_va, V_va,
+            S_min, S_max, t_min, t_max,
+            r, sigma, T, K, option_type,
+            n_epochs, lr, lambda_pde, effective_lambda_bc, lambda_data,
+            n_collocation, dev, use_warmup,
+            warmup_epochs=warmup_epochs,
+            warmup_initial_lr=warmup_initial_lr,
+        )
+
+        test_metrics = _evaluate_metrics(model, S_te, t_te, V_te)
+        boundary_error = _boundary_error_at_maturity(
+            model, K, S_min, S_max, T, option_type,
+        )
+
+        return {
+            'model': model,
+            'train_loss_history': train_hist,
+            'val_loss_history': val_hist,
+            'test_metrics': test_metrics,
+            'boundary_error': boundary_error,
+            'option_type': option_type,
+            'used_warmup': bool(use_warmup),
+            'used_hard_constraint': bool(use_hard_constraint),
+        }
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("train_log_price_pinn failed: %s", exc)
+        return {
+            'model': None,
+            'train_loss_history': [],
+            'val_loss_history': [],
+            'test_metrics': {'relative_l2_error': float('nan'),
+                             'mae': float('nan'), 'r2': float('nan')},
+            'boundary_error': float('nan'),
+            'error': str(exc),
+        }

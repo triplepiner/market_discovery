@@ -77,18 +77,65 @@
        MSFT (cached): q_implied=implausible, q_actual~0.0070, match=NO
 
      Jump Dynamics (Merton Bridge):
-       SPY: closer to BS (cos_BS=-0.002, cos_Merton=-0.036, jump_est=0.9517)
-       QQQ: closer to Merton (cos_BS=-0.002, cos_Merton=0.292, jump_est=1.6089)
-       AAPL: closer to BS (cos_BS=-0.001, cos_Merton=-0.173, jump_est=0.7302)
-       MSFT: closer to Merton (cos_BS=-0.000, cos_Merton=0.998, jump_est=73.9573)
+       SPY: closer to BS (cos_BS=-0.002, cos_Merton=-0.177, jump_est=5.2111)
+       QQQ: closer to BS (cos_BS=-0.002, cos_Merton=-0.023, jump_est=1.5635)
+       AAPL: closer to Merton (cos_BS=-0.002, cos_Merton=0.927, jump_est=15.8338)
+       MSFT: closer to BS (cos_BS=-0.003, cos_Merton=-0.011, jump_est=1.3953)
 
      SPY IV Regime Analysis:
-       Term structure shape: flat
-       Maturity: Short (<=22.3%, Medium (=20.5%, Long (>6=21.8%
-       Moneyness: ATM (0.9=25.7%, OTM call=19.7%
+       Volatility skew detected: YES
+       Term structure shape: downward
+       Maturity: Short=15.8%, Medium=17.7%, Long=19.8%
+       Moneyness: OTM-put=29.4%, ATM=15.7%, OTM-call=15.8%
      QQQ IV Regime Analysis:
-       Term structure shape: upward
-       Maturity: Short (<=25.0%, Medium (=24.6%, Long (>6=28.3%
-       Moneyness: ATM (0.9=29.3%, OTM call=23.4%
+       Volatility skew detected: YES
+       Term structure shape: downward
+       Maturity: Short=22.0%, Medium=22.4%, Long=27.0%
+       Moneyness: OTM-put=33.5%, ATM=22.6%, OTM-call=21.4%
+
+  9. DUPIRE EQUATION DISCOVERY
+     Sanity: R^2=0.9990, sigma=0.1999, drift=0.0522
+     AAPL: R^2=0.1421, sigma=nan
+     MSFT: R^2=-0.2575, sigma=0.0792
+     QQQ: R^2=0.2496, sigma=0.0893
+     SPY: R^2=0.7379, sigma=0.0637
+
+  10. PINN VARIANTS COMPARISON
+      ----------------------------------------------------------------
+      Variant                      rel_L2        R^2   boundary_err
+      original_call            1.0074e-02     0.9998            nan
+      hard_constraint_call     3.0837e-02     0.9985     0.0000e+00
+      logprice_call            4.7519e-03     1.0000     3.5634e-01
+      original_put             4.8043e-01     0.5988            nan
+      hard_constraint_put      4.9841e-02     0.9959     0.0000e+00
+      logprice_put             3.6871e-02     0.9978     4.2178e-01
+
+  11. ALL-METHODS DERIVATIVE COMPARISON (R^2(clean) by method, noise)
+      ----------------------------------------------------------------
+      method       0.0%   5.0%  10.0%  20.0%
+      fd          1.000  0.405 -0.486 -1.298
+      savgol      1.000  0.846  0.816  0.650
+      neural      0.867  0.557  0.119 -0.434
+      weak        0.901  0.885  0.888  0.832
+      gp          1.000  0.952  0.932  0.860
+      spectral    0.908 -0.001 -0.001 -0.000
+
+  12. MULTICOLLINEARITY RESOLUTION
+      Ensemble SINDy inclusion probabilities:
+        V               incl=0.00
+        dV/dS           incl=0.00
+        d2V/dS2         incl=1.00
+        S*dV/dS         incl=0.00
+        S2*d2V/dS2      incl=0.00
+      Selected (>60%): ['d2V/dS2']
+      PCA-SINDy: n_active=5, R^2=1.0000, active=['V', 'dV/dS', 'd2V/dS2', 'S*dV/dS', 'S2*d2V/dS2']
+      Elastic Net: n_active=3, R^2=1.0000, active=['V', 'S*dV/dS', 'S2*d2V/dS2']
+
+  13. NOVEL CONTRIBUTIONS
+      Time-varying SINDy (BS): is_autonomous=True
+      Time-varying SINDy (Merton): is_autonomous=True
+      Spectral weak SINDy R^2=0.9862 vs Gaussian SINDy R^2=1.0000
+      PySR status: skipped (PySR unavailable: No module named 'pysr')
+      CV-selected threshold: 1.0000 (BIC threshold from SINDy: 0.0010)
 
 ========================================================================

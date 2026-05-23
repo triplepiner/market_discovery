@@ -14,6 +14,9 @@ from src.diagnostics import (
     check_overfitting,
     check_training_convergence,
 )
+from src.data_generation import generate_price_surface
+from src.sindy_discovery import discover_pde
+from src.visualization import plot_residual_heatmap
 
 
 # ---------------------------------------------------------------------------
@@ -120,3 +123,43 @@ class TestConvergenceDetection:
             f"Tail relative change {result['tail_relative_change']:.6e} "
             f"should be < 0.01 for a converged curve"
         )
+
+
+# ---------------------------------------------------------------------------
+# 5. Residual heatmap plotting (Improvement #15)
+# ---------------------------------------------------------------------------
+class TestResidualHeatmap:
+    def test_residual_heatmap_creates_png(self):
+        """
+        Generate clean BS data, run discover_pde, call plot_residual_heatmap,
+        and verify the PNG file exists with non-zero size.
+        """
+        K = 100.0
+        r = 0.05
+        sigma = 0.2
+        T = 1.0
+
+        V, S_grid, t_grid = generate_price_surface(
+            S_min=50, S_max=150, n_S=60,
+            t_min=0.0, n_t=60,
+            K=K, r=r, sigma=sigma, T=T, option_type='call',
+        )
+
+        sindy_results = discover_pde(
+            V, S_grid, t_grid,
+            true_sigma=sigma, true_r=r, K=K, T=T, option_type='call',
+        )
+
+        output_filename = 'test_residual_clean.png'
+        path = plot_residual_heatmap(
+            V, S_grid, t_grid,
+            sindy_results['discovered_coefficients'],
+            sindy_results['term_names'],
+            output_filename,
+            K=K,
+            title='Test PDE Residual Heatmap',
+        )
+
+        assert path is not None, "plot_residual_heatmap returned None"
+        assert os.path.exists(path), f"Expected PNG file at {path} not found"
+        assert os.path.getsize(path) > 0, f"PNG file at {path} is empty"

@@ -52,6 +52,20 @@ from src.weak_sindy import weak_sindy_discover, tune_weak_sindy
 from src.adaptive_denoiser import adaptive_sindy_discover, estimate_noise_level, select_derivative_strategy
 from src import visualization as viz
 
+# ── New module imports (PRD improvements #1-16) ───────────────────────────
+from src.dupire_discovery import (
+    dupire_sanity_check, run_dupire_on_real_data, compare_bs_vs_dupire_on_real_data,
+)
+from src.pinn_validation import train_hard_constraint_pinn, train_log_price_pinn
+from src.gp_derivatives import run_gp_noise_robustness
+from src.spectral_derivatives import run_spectral_noise_robustness
+from src.sindy_discovery import (
+    ensemble_sindy, pca_sindy, time_varying_sindy,
+    cv_threshold_select, bootstrap_confidence_intervals,
+)
+from src.baselines import elastic_net_regression, pysr_symbolic_regression
+from src.weak_sindy import weak_sindy_spectral_discover, adaptive_width_weak_sindy
+
 logger = setup_logging('pipeline')
 
 # ── Parameters ────────────────────────────────────────────────────────────
@@ -1751,6 +1765,806 @@ def step13_final_summary(sindy_call, sindy_put, pinn_call, pinn_put,
     }
 
 
+# ============================================================================
+# NEW STEP FUNCTIONS — PRD IMPROVEMENTS #1-16
+# ============================================================================
+# Each step is wrapped in try/except so a single failure does not break the
+# whole pipeline.  Heavy experiments use NEW_EXPERIMENT_GRID = 50 to keep
+# runtime bounded.
+
+# Reduced epoch count for new PINN variants (PRD #7 and #8). 5000 by default;
+# drop to NEW_PINN_EPOCHS_FAST if runtime is tight.
+NEW_PINN_EPOCHS = 5000
+
+# Standard noise sweep for the new derivative methods (GP, Spectral).
+NEW_NOISE_LEVELS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30]
+
+
+def step_dupire_pipeline(real_results):
+    """Dupire sanity check + real-data Dupire run + BS vs Dupire comparison."""
+    print("\n" + "=" * 64)
+    print("  STEP D: DUPIRE EQUATION DISCOVERY")
+    print("=" * 64)
+    try:
+        sanity = dupire_sanity_check()
+        print(f"  Dupire sanity: R^2={sanity['r2_score']:.4f}, "
+              f"sigma_disc={sanity['sigma_discovered']:.4f}, "
+              f"drift_disc={sanity.get('drift_discovered', float('nan')):.4f}")
+
+        per_ticker = (real_results or {}).get('per_ticker_results', {})
+        dupire_real = run_dupire_on_real_data(per_ticker) if per_ticker else {}
+        comparison = None
+        if dupire_real:
+            try:
+                comparison = compare_bs_vs_dupire_on_real_data(per_ticker, dupire_real)
+            except Exception as e:
+                print(f"  Dupire comparison SKIPPED: {e}")
+
+        # Print per-ticker R^2 summary
+        for ticker, res in dupire_real.items():
+            if isinstance(res, dict) and 'r2_score' in res:
+                print(f"    {ticker}: Dupire R^2={res['r2_score']:.4f}, "
+                      f"sigma={res.get('sigma_discovered', float('nan')):.4f}")
+            elif isinstance(res, dict) and 'error' in res:
+                print(f"    {ticker}: error ({res.get('message', '')})")
+
+        return {
+            'sanity': sanity,
+            'real_dupire': dupire_real,
+            'comparison_df': comparison,
+        }
+    except Exception as e:
+        print(f"  Dupire SKIPPED: {e}")
+        return {'sanity': None, 'real_dupire': {}, 'comparison_df': None}
+
+
+def step_hard_constraint_pinn(option_type='call'):
+    """Train a HardConstraintPINN variant for the BS PDE (PRD #7)."""
+    print(f"\n  Hard-constraint PINN [{option_type}]...")
+    try:
+        with Timer(f"HC-PINN {option_type}"):
+            result = train_hard_constraint_pinn(
+                option_type=option_type,
+                n_epochs=NEW_PINN_EPOCHS,
+                use_warmup=False,
+                seed=42,
+            )
+        tm = result.get('test_metrics', {})
+        print(f"    rel_L2={tm.get('relative_l2_error', float('nan')):.4e}, "
+              f"R^2={tm.get('r2', float('nan')):.4f}, "
+              f"boundary_err={result.get('boundary_error', float('nan')):.4e}")
+        return result
+    except Exception as e:
+        print(f"    HC-PINN {option_type} SKIPPED: {e}")
+        return {'test_metrics': {'relative_l2_error': float('nan'),
+                                  'mae': float('nan'), 'r2': float('nan')},
+                'boundary_error': float('nan'), 'error': str(e)}
+
+
+def step_log_price_pinn(option_type='call'):
+    """Train a LogPricePINN variant for the BS PDE (PRD #8)."""
+    print(f"\n  Log-price PINN [{option_type}]...")
+    try:
+        with Timer(f"LP-PINN {option_type}"):
+            result = train_log_price_pinn(
+                option_type=option_type,
+                n_epochs=NEW_PINN_EPOCHS,
+                use_hard_constraint=False,
+                use_warmup=False,
+                seed=42,
+            )
+        tm = result.get('test_metrics', {})
+        print(f"    rel_L2={tm.get('relative_l2_error', float('nan')):.4e}, "
+              f"R^2={tm.get('r2', float('nan')):.4f}, "
+              f"boundary_err={result.get('boundary_error', float('nan')):.4e}")
+        return result
+    except Exception as e:
+        print(f"    LP-PINN {option_type} SKIPPED: {e}")
+        return {'test_metrics': {'relative_l2_error': float('nan'),
+                                  'mae': float('nan'), 'r2': float('nan')},
+                'boundary_error': float('nan'), 'error': str(e)}
+
+
+def step_gp_noise_robust():
+    """GP-SINDy noise robustness sweep (PRD #2)."""
+    print("\n" + "=" * 64)
+    print("  STEP GP: GAUSSIAN PROCESS DERIVATIVE NOISE ROBUSTNESS")
+    print("=" * 64)
+    try:
+        with Timer("GP noise sweep"):
+            df = run_gp_noise_robustness(
+                noise_levels=NEW_NOISE_LEVELS,
+                n_S=NEW_EXPERIMENT_GRID,
+                n_t=NEW_EXPERIMENT_GRID,
+                K=K, r=R, sigma=SIGMA, T=T, seed=42,
+            )
+        print(df.to_string(index=False))
+        return df
+    except Exception as e:
+        print(f"  GP noise sweep SKIPPED: {e}")
+        return pd.DataFrame()
+
+
+def step_spectral_noise_robust():
+    """Spectral-derivative SINDy noise robustness sweep (PRD #3)."""
+    print("\n" + "=" * 64)
+    print("  STEP SP: SPECTRAL DERIVATIVE NOISE ROBUSTNESS")
+    print("=" * 64)
+    try:
+        with Timer("Spectral noise sweep"):
+            df = run_spectral_noise_robustness(
+                noise_levels=NEW_NOISE_LEVELS,
+                n_S=NEW_EXPERIMENT_GRID,
+                n_t=NEW_EXPERIMENT_GRID,
+                K=K, r=R, sigma=SIGMA, T=T, seed=42,
+            )
+        print(df.to_string(index=False))
+        return df
+    except Exception as e:
+        print(f"  Spectral noise sweep SKIPPED: {e}")
+        return pd.DataFrame()
+
+
+def step_ensemble_sindy(data):
+    """Ensemble SINDy via subsampling (PRD #10)."""
+    print("\n" + "=" * 64)
+    print("  STEP ENS: ENSEMBLE SINDy (50 BOOTSTRAPS)")
+    print("=" * 64)
+    try:
+        with Timer("Ensemble SINDy"):
+            result = ensemble_sindy(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                n_bootstraps=50, seed=42,
+            )
+        for i, name in enumerate(result['term_names']):
+            print(f"    {name:<15}  incl_prob={result['inclusion_probabilities'][i]:.2f}  "
+                  f"median_coef={result['median_coefficients'][i]:+.6f}  "
+                  f"[{result['ci_low'][i]:+.4f}, {result['ci_high'][i]:+.4f}]")
+        print(f"  Selected (>60% inclusion): {result['selected_terms']}")
+        return result
+    except Exception as e:
+        print(f"  Ensemble SINDy SKIPPED: {e}")
+        return None
+
+
+def step_pca_sindy(data):
+    """PCA-SINDy variant (PRD #11)."""
+    print("\n" + "=" * 64)
+    print("  STEP PCA: PCA-SINDy")
+    print("=" * 64)
+    try:
+        with Timer("PCA SINDy"):
+            result = pca_sindy(
+                data['V_call'], data['S_grid'], data['t_grid'], seed=42,
+            ) if 'seed' in pca_sindy.__code__.co_varnames else pca_sindy(
+                data['V_call'], data['S_grid'], data['t_grid'],
+            )
+        print(f"  R^2={result['r2_score']:.6f}, n_active={result['n_active']}, "
+              f"active_terms={result['active_terms']}")
+        return result
+    except Exception as e:
+        print(f"  PCA-SINDy SKIPPED: {e}")
+        return None
+
+
+def step_elastic_net(data):
+    """Elastic-Net regression baseline (PRD #6)."""
+    print("\n" + "=" * 64)
+    print("  STEP EN: ELASTIC NET REGRESSION")
+    print("=" * 64)
+    try:
+        with Timer("Elastic Net"):
+            result = elastic_net_regression(
+                data['V_call'], data['S_grid'], data['t_grid'], seed=42,
+            )
+        print(f"  best_alpha={result['best_alpha']:.4e}, "
+              f"l1_ratio={result['best_l1_ratio']:.3f}, "
+              f"R^2={result['r2_score']:.6f}, active={result['n_active']}")
+        print(f"  active_terms={result['active_terms']}")
+        return result
+    except Exception as e:
+        print(f"  Elastic Net SKIPPED: {e}")
+        return None
+
+
+def step_pysr(data):
+    """PySR symbolic regression baseline (PRD #9; skipped if PySR missing)."""
+    print("\n" + "=" * 64)
+    print("  STEP PYSR: SYMBOLIC REGRESSION (PySR)")
+    print("=" * 64)
+    try:
+        with Timer("PySR"):
+            result = pysr_symbolic_regression(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                timeout_minutes=3, seed=42,
+            )
+        status = result.get('status', 'unknown')
+        if status == 'completed':
+            print(f"  status=completed, R^2={result.get('r2_score', float('nan')):.4f}")
+            print(f"  expression={result.get('symbolic_expression', 'n/a')}")
+        else:
+            print(f"  status={status}, reason={result.get('reason', 'n/a')}")
+        return result
+    except Exception as e:
+        print(f"  PySR SKIPPED: {e}")
+        return {'status': 'skipped', 'reason': str(e), 'method': 'pysr'}
+
+
+def step_spectral_weak(data):
+    """Weak SINDy with spectral test functions (PRD #5)."""
+    print("\n" + "=" * 64)
+    print("  STEP SW: SPECTRAL WEAK SINDy")
+    print("=" * 64)
+    try:
+        with Timer("Spectral weak SINDy"):
+            result = weak_sindy_spectral_discover(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                n_modes_S=8, n_modes_t=8,
+                true_sigma=SIGMA, true_r=R, seed=42,
+            )
+        print(f"  PDE: {result['human_readable_pde']}")
+        print(f"  R^2={result['r2_score']:.6f}, active={result['n_active']}, "
+              f"cond#={result['condition_number']:.2e}")
+        return result
+    except Exception as e:
+        print(f"  Spectral weak SINDy SKIPPED: {e}")
+        return None
+
+
+def step_time_varying(data, merton_result, real_results):
+    """Time-varying SINDy on BS, Merton, and (if available) real data (PRD #12)."""
+    print("\n" + "=" * 64)
+    print("  STEP TV: TIME-VARYING SINDy")
+    print("=" * 64)
+    out = {}
+    # BS
+    try:
+        with Timer("TV SINDy BS"):
+            tv_bs = time_varying_sindy(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                window_size=20, stride=5,
+            )
+        print(f"  BS: n_windows={len(tv_bs['window_centers'])}, "
+              f"is_autonomous={tv_bs['is_autonomous']}")
+        out['bs'] = tv_bs
+    except Exception as e:
+        print(f"  TV SINDy BS SKIPPED: {e}")
+        out['bs'] = None
+
+    # Merton
+    try:
+        if merton_result is not None and 'V_merton' in merton_result:
+            with Timer("TV SINDy Merton"):
+                tv_m = time_varying_sindy(
+                    merton_result['V_merton'],
+                    merton_result['S_grid'],
+                    merton_result['t_grid'],
+                    window_size=20, stride=5,
+                )
+            print(f"  Merton: n_windows={len(tv_m['window_centers'])}, "
+                  f"is_autonomous={tv_m['is_autonomous']}")
+            out['merton'] = tv_m
+        else:
+            out['merton'] = None
+    except Exception as e:
+        print(f"  TV SINDy Merton SKIPPED: {e}")
+        out['merton'] = None
+    return out
+
+
+def step_adaptive_width_weak(data):
+    """Weak SINDy with adaptive Gaussian widths (PRD #4)."""
+    print("\n" + "=" * 64)
+    print("  STEP AW: ADAPTIVE-WIDTH WEAK SINDy")
+    print("=" * 64)
+    try:
+        with Timer("Adaptive-width weak"):
+            result = adaptive_width_weak_sindy(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                true_sigma=SIGMA, true_r=R, seed=42,
+            )
+        print(f"  width_factor_used={result.get('width_factor_used', float('nan')):.3f}")
+        print(f"  R^2={result['r2_score']:.6f}, active={result['n_active']}, "
+              f"PDE: {result['human_readable_pde']}")
+        return result
+    except Exception as e:
+        print(f"  Adaptive-width weak SINDy SKIPPED: {e}")
+        return None
+
+
+def step_cv_threshold(data):
+    """Cross-validated threshold selection vs BIC (PRD #13)."""
+    print("\n" + "=" * 64)
+    print("  STEP CV: CROSS-VALIDATED THRESHOLD SELECTION")
+    print("=" * 64)
+    try:
+        with Timer("CV threshold"):
+            best_thr, cv_scores = cv_threshold_select(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                n_folds=5, seed=42,
+            )
+        print(f"  Best CV threshold: {best_thr:.4f}")
+        for thr, score in sorted(cv_scores.items()):
+            print(f"    thr={thr:.4f}  CV-R^2={score:.6f}")
+        return {'best_threshold': best_thr, 'cv_scores': cv_scores}
+    except Exception as e:
+        print(f"  CV threshold SKIPPED: {e}")
+        return None
+
+
+def step_bootstrap_cis(data):
+    """Bootstrap 95% CIs for SINDy coefficients (PRD #14)."""
+    print("\n" + "=" * 64)
+    print("  STEP CI: BOOTSTRAP CONFIDENCE INTERVALS")
+    print("=" * 64)
+    try:
+        with Timer("Bootstrap CIs"):
+            df = bootstrap_confidence_intervals(
+                data['V_call'], data['S_grid'], data['t_grid'],
+                n_bootstraps=100, seed=42,
+            )
+        print(df.to_string(index=False))
+        return df
+    except Exception as e:
+        print(f"  Bootstrap CIs SKIPPED: {e}")
+        return None
+
+
+def step_residual_plots(data, merton_result, sindy_call, real_results):
+    """Generate residual heatmaps for clean / noisy / Merton / real (PRD #16)."""
+    print("\n" + "=" * 64)
+    print("  STEP RP: RESIDUAL HEATMAPS")
+    print("=" * 64)
+    try:
+        # Build noisy variant on the fly
+        try:
+            V_noisy = add_noise(data['V_call'], 0.05, seed=42)
+        except Exception:
+            V_noisy = None
+
+        clean_data = {'V': data['V_call'], 'S_grid': data['S_grid'],
+                      't_grid': data['t_grid']}
+        noisy_data = (
+            {'V': V_noisy, 'S_grid': data['S_grid'], 't_grid': data['t_grid']}
+            if V_noisy is not None else None
+        )
+        merton_data = None
+        merton_sindy = None
+        if merton_result is not None and 'V_merton' in merton_result:
+            merton_data = {
+                'V': merton_result['V_merton'],
+                'S_grid': merton_result['S_grid'],
+                't_grid': merton_result['t_grid'],
+            }
+            merton_sindy = {
+                'discovered_coefficients': merton_result['discovered_coefficients'],
+                'term_names': list(TERM_NAMES),
+            }
+
+        # Real data: try SPY
+        real_data_dict = None
+        real_sindy = None
+        if real_results is not None:
+            ptr = real_results.get('per_ticker_results', {})
+            if 'SPY' in ptr:
+                surf = ptr['SPY'].get('surface_data', {})
+                if 'V_surface' in surf:
+                    real_data_dict = {'SPY': {
+                        'V': surf['V_surface'],
+                        'S_grid': surf.get('K_grid', surf.get('S_grid')),
+                        't_grid': surf.get('tau_grid', surf.get('t_grid')),
+                    }}
+                    sindy_res_spy = ptr['SPY'].get('sindy_result')
+                    if sindy_res_spy is not None:
+                        real_sindy = {'SPY': sindy_res_spy}
+
+        paths = viz.generate_all_residual_maps(
+            clean_data=clean_data,
+            noisy_data=noisy_data,
+            merton_data=merton_data,
+            real_data_dict=real_data_dict,
+            clean_sindy=sindy_call,
+            noisy_sindy=sindy_call,   # reuse coefficients from clean fit
+            merton_sindy=merton_sindy,
+            real_sindy=real_sindy,
+            K=K,
+        )
+        for fname, p in (paths or {}).items():
+            print(f"  Generated: {fname} -> {p}")
+        return paths
+    except Exception as e:
+        print(f"  Residual plots SKIPPED: {e}")
+        return {}
+
+
+def step_save_new_tables(*, dupire_results, hc_pinn_call, hc_pinn_put,
+                          lp_pinn_call, lp_pinn_put,
+                          gp_noise_df, spectral_noise_df, ensemble_result,
+                          pca_result, elastic_result, pysr_result,
+                          spectral_weak_result, tv_results, adaptive_w_result,
+                          cv_thresh, boot_cis, sindy_call):
+    """Save CSVs for all the new improvements (PRD #1-16)."""
+    print("\n" + "=" * 64)
+    print("  STEP SAVE: NEW-IMPROVEMENT TABLES")
+    print("=" * 64)
+
+    # Dupire real-data comparison
+    try:
+        cdf = (dupire_results or {}).get('comparison_df')
+        if cdf is not None and hasattr(cdf, 'to_csv'):
+            p = os.path.join(TBL_DIR, 'dupire_real_comparison.csv')
+            cdf.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  dupire_real_comparison.csv SKIPPED: {e}")
+
+    # Dupire sanity (single row)
+    try:
+        s = (dupire_results or {}).get('sanity')
+        if s is not None:
+            row = {
+                'r2_score': s.get('r2_score', float('nan')),
+                'sigma_discovered': s.get('sigma_discovered', float('nan')),
+                'drift_discovered': s.get('drift_discovered', float('nan')),
+            }
+            p = os.path.join(TBL_DIR, 'dupire_sanity.csv')
+            pd.DataFrame([row]).to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  dupire_sanity.csv SKIPPED: {e}")
+
+    # Hard-constraint + log-price PINNs (one CSV each)
+    try:
+        rows = []
+        for label, r in [('hard_call', hc_pinn_call), ('hard_put', hc_pinn_put)]:
+            tm = (r or {}).get('test_metrics', {})
+            rows.append({
+                'variant': label,
+                'relative_l2_error': tm.get('relative_l2_error', float('nan')),
+                'mae': tm.get('mae', float('nan')),
+                'r2': tm.get('r2', float('nan')),
+                'boundary_error': (r or {}).get('boundary_error', float('nan')),
+            })
+        p = os.path.join(TBL_DIR, 'hard_constraint_pinn.csv')
+        pd.DataFrame(rows).to_csv(p, index=False)
+        print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  hard_constraint_pinn.csv SKIPPED: {e}")
+
+    try:
+        rows = []
+        for label, r in [('logprice_call', lp_pinn_call), ('logprice_put', lp_pinn_put)]:
+            tm = (r or {}).get('test_metrics', {})
+            rows.append({
+                'variant': label,
+                'relative_l2_error': tm.get('relative_l2_error', float('nan')),
+                'mae': tm.get('mae', float('nan')),
+                'r2': tm.get('r2', float('nan')),
+                'boundary_error': (r or {}).get('boundary_error', float('nan')),
+            })
+        p = os.path.join(TBL_DIR, 'logprice_pinn.csv')
+        pd.DataFrame(rows).to_csv(p, index=False)
+        print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  logprice_pinn.csv SKIPPED: {e}")
+
+    # GP & spectral noise robustness
+    try:
+        if gp_noise_df is not None and not gp_noise_df.empty:
+            p = os.path.join(TBL_DIR, 'gp_noise_robustness.csv')
+            gp_noise_df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  gp_noise_robustness.csv SKIPPED: {e}")
+    try:
+        if spectral_noise_df is not None and not spectral_noise_df.empty:
+            p = os.path.join(TBL_DIR, 'spectral_noise_robustness.csv')
+            spectral_noise_df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  spectral_noise_robustness.csv SKIPPED: {e}")
+
+    # Ensemble SINDy
+    try:
+        if ensemble_result is not None:
+            rows = []
+            for i, name in enumerate(ensemble_result['term_names']):
+                rows.append({
+                    'term': name,
+                    'inclusion_probability': float(ensemble_result['inclusion_probabilities'][i]),
+                    'median_coefficient': float(ensemble_result['median_coefficients'][i]),
+                    'ci_low': float(ensemble_result['ci_low'][i]),
+                    'ci_high': float(ensemble_result['ci_high'][i]),
+                })
+            p = os.path.join(TBL_DIR, 'ensemble_sindy.csv')
+            pd.DataFrame(rows).to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  ensemble_sindy.csv SKIPPED: {e}")
+
+    # PCA SINDy
+    try:
+        if pca_result is not None:
+            rows = []
+            for i, name in enumerate(pca_result['term_names']):
+                rows.append({
+                    'term': name,
+                    'coefficient': float(pca_result['discovered_coefficients'][i]),
+                })
+            df = pd.DataFrame(rows)
+            df['r2_score'] = pca_result['r2_score']
+            df['n_active'] = pca_result['n_active']
+            p = os.path.join(TBL_DIR, 'pca_sindy.csv')
+            df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  pca_sindy.csv SKIPPED: {e}")
+
+    # Elastic Net
+    try:
+        if elastic_result is not None:
+            rows = []
+            for i, name in enumerate(elastic_result['term_names']):
+                rows.append({
+                    'term': name,
+                    'coefficient': float(elastic_result['coefficients'][i]),
+                })
+            df = pd.DataFrame(rows)
+            df['best_alpha'] = elastic_result['best_alpha']
+            df['best_l1_ratio'] = elastic_result['best_l1_ratio']
+            df['r2_score'] = elastic_result['r2_score']
+            df['n_active'] = elastic_result['n_active']
+            p = os.path.join(TBL_DIR, 'elastic_net.csv')
+            df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  elastic_net.csv SKIPPED: {e}")
+
+    # PySR status
+    try:
+        if pysr_result is not None:
+            row = {
+                'status': pysr_result.get('status', 'unknown'),
+                'reason': pysr_result.get('reason', ''),
+                'r2_score': pysr_result.get('r2_score', float('nan')),
+                'symbolic_expression': pysr_result.get('symbolic_expression', ''),
+            }
+            p = os.path.join(TBL_DIR, 'pysr_status.csv')
+            pd.DataFrame([row]).to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  pysr_status.csv SKIPPED: {e}")
+
+    # Spectral weak SINDy
+    try:
+        if spectral_weak_result is not None:
+            rows = []
+            for i, name in enumerate(spectral_weak_result['term_names']):
+                rows.append({
+                    'term': name,
+                    'coefficient': float(spectral_weak_result['discovered_coefficients'][i]),
+                })
+            df = pd.DataFrame(rows)
+            df['r2_score'] = spectral_weak_result['r2_score']
+            df['condition_number'] = spectral_weak_result['condition_number']
+            p = os.path.join(TBL_DIR, 'spectral_weak_sindy.csv')
+            df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  spectral_weak_sindy.csv SKIPPED: {e}")
+
+    # Time-varying SINDy
+    try:
+        rows = []
+        for label, tv in (tv_results or {}).items():
+            if tv is None:
+                continue
+            for k, c in enumerate(tv['window_centers']):
+                row = {
+                    'dataset': label,
+                    'window_center': float(c),
+                    'r2': float(tv['r2_per_window'][k]),
+                    'is_autonomous': bool(tv['is_autonomous']),
+                }
+                if tv['coefficients_per_window'].size > 0:
+                    for j in range(tv['coefficients_per_window'].shape[1]):
+                        row[f'coeff_{j}'] = float(tv['coefficients_per_window'][k, j])
+                rows.append(row)
+        if rows:
+            p = os.path.join(TBL_DIR, 'time_varying_sindy.csv')
+            pd.DataFrame(rows).to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  time_varying_sindy.csv SKIPPED: {e}")
+
+    # Adaptive-width weak SINDy
+    try:
+        if adaptive_w_result is not None:
+            rows = []
+            for i, name in enumerate(adaptive_w_result['term_names']):
+                rows.append({
+                    'term': name,
+                    'coefficient': float(adaptive_w_result['discovered_coefficients'][i]),
+                })
+            df = pd.DataFrame(rows)
+            df['r2_score'] = adaptive_w_result['r2_score']
+            df['width_factor_used'] = adaptive_w_result.get('width_factor_used', float('nan'))
+            p = os.path.join(TBL_DIR, 'adaptive_width_weak.csv')
+            df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  adaptive_width_weak.csv SKIPPED: {e}")
+
+    # CV threshold
+    try:
+        if cv_thresh is not None:
+            rows = [{'threshold': float(t), 'cv_r2': float(s)}
+                    for t, s in sorted(cv_thresh['cv_scores'].items())]
+            df = pd.DataFrame(rows)
+            df['best_threshold'] = cv_thresh['best_threshold']
+            p = os.path.join(TBL_DIR, 'cv_threshold.csv')
+            df.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  cv_threshold.csv SKIPPED: {e}")
+
+    # Bootstrap CIs
+    try:
+        if boot_cis is not None and hasattr(boot_cis, 'to_csv'):
+            p = os.path.join(TBL_DIR, 'bootstrap_cis.csv')
+            boot_cis.to_csv(p, index=False)
+            print(f"  Saved: {os.path.basename(p)}")
+    except Exception as e:
+        print(f"  bootstrap_cis.csv SKIPPED: {e}")
+
+
+def build_new_summary_sections(*, dupire_results, hc_pinn_call, hc_pinn_put,
+                                lp_pinn_call, lp_pinn_put, pinn_call, pinn_put,
+                                gp_noise_df, spectral_noise_df, all_methods_df,
+                                ensemble_result, pca_result, elastic_result,
+                                tv_results, spectral_weak_result, pysr_result,
+                                cv_thresh, sindy_call):
+    """Return a list of summary lines for new sections 9-13."""
+    lines = []
+
+    # Section 9 — Dupire
+    lines.append("  9. DUPIRE EQUATION DISCOVERY")
+    sanity = (dupire_results or {}).get('sanity')
+    if sanity is not None:
+        lines.append(
+            f"     Sanity: R^2={sanity.get('r2_score', float('nan')):.4f}, "
+            f"sigma={sanity.get('sigma_discovered', float('nan')):.4f}, "
+            f"drift={sanity.get('drift_discovered', float('nan')):.4f}"
+        )
+    else:
+        lines.append("     Sanity: SKIPPED")
+    real_dupire = (dupire_results or {}).get('real_dupire', {}) or {}
+    if real_dupire:
+        for ticker, res in sorted(real_dupire.items()):
+            if isinstance(res, dict) and 'r2_score' in res:
+                lines.append(
+                    f"     {ticker}: R^2={res['r2_score']:.4f}, "
+                    f"sigma={res.get('sigma_discovered', float('nan')):.4f}"
+                )
+            elif isinstance(res, dict) and 'error' in res:
+                lines.append(f"     {ticker}: error ({res.get('message', '')})")
+    else:
+        lines.append("     Real-data Dupire: none.")
+    lines.append("")
+
+    # Section 10 — PINN variants
+    lines.append("  10. PINN VARIANTS COMPARISON")
+    lines.append("      " + "-" * 64)
+    lines.append(
+        f"      {'Variant':<22} {'rel_L2':>12} {'R^2':>10} {'boundary_err':>14}"
+    )
+    def _row(name, r):
+        if r is None:
+            tm = {}
+        else:
+            tm = r.get('test_metrics', {}) if isinstance(r, dict) else {}
+        rel_l2 = tm.get('relative_l2_error', float('nan'))
+        r2 = tm.get('r2', float('nan'))
+        be = (r or {}).get('boundary_error', float('nan')) if isinstance(r, dict) else float('nan')
+        lines.append(f"      {name:<22} {rel_l2:>12.4e} {r2:>10.4f} {be:>14.4e}")
+    _row("original_call", pinn_call)
+    _row("hard_constraint_call", hc_pinn_call)
+    _row("logprice_call", lp_pinn_call)
+    _row("original_put", pinn_put)
+    _row("hard_constraint_put", hc_pinn_put)
+    _row("logprice_put", lp_pinn_put)
+    lines.append("")
+
+    # Section 11 — Derivative methods comparison at common noise levels
+    lines.append("  11. ALL-METHODS DERIVATIVE COMPARISON (R^2(clean) by method, noise)")
+    lines.append("      " + "-" * 64)
+    try:
+        commons = [0.0, 0.05, 0.10, 0.20]
+        # Combine all_methods_df (fd, savgol, neural, weak) with GP and Spectral
+        method_lookup = {}
+        if all_methods_df is not None and not all_methods_df.empty:
+            for _, row in all_methods_df.iterrows():
+                method_lookup.setdefault(row['method'], {})[round(float(row['noise_pct']), 4)] = float(row['r2_clean'])
+        if gp_noise_df is not None and not gp_noise_df.empty:
+            for _, row in gp_noise_df.iterrows():
+                method_lookup.setdefault('gp', {})[round(float(row['noise_pct']), 4)] = float(row['r2_noisy'])
+        if spectral_noise_df is not None and not spectral_noise_df.empty:
+            for _, row in spectral_noise_df.iterrows():
+                method_lookup.setdefault('spectral', {})[round(float(row['noise_pct']), 4)] = float(row['r2_noisy'])
+
+        header = f"      {'method':<10}" + "".join(f" {n*100:>5.1f}%" for n in commons)
+        lines.append(header)
+        for m in ['fd', 'savgol', 'neural', 'weak', 'gp', 'spectral']:
+            if m not in method_lookup:
+                continue
+            cells = []
+            for n in commons:
+                v = method_lookup[m].get(round(n, 4), float('nan'))
+                cells.append(f" {v:>6.3f}")
+            lines.append(f"      {m:<10}" + "".join(cells))
+    except Exception as e:
+        lines.append(f"      (table SKIPPED: {e})")
+    lines.append("")
+
+    # Section 12 — Multicollinearity
+    lines.append("  12. MULTICOLLINEARITY RESOLUTION")
+    if ensemble_result is not None:
+        lines.append("      Ensemble SINDy inclusion probabilities:")
+        for i, name in enumerate(ensemble_result['term_names']):
+            lines.append(
+                f"        {name:<15} incl={ensemble_result['inclusion_probabilities'][i]:.2f}"
+            )
+        lines.append(f"      Selected (>60%): {ensemble_result['selected_terms']}")
+    else:
+        lines.append("      Ensemble SINDy: SKIPPED")
+    if pca_result is not None:
+        lines.append(
+            f"      PCA-SINDy: n_active={pca_result['n_active']}, "
+            f"R^2={pca_result['r2_score']:.4f}, "
+            f"active={pca_result['active_terms']}"
+        )
+    else:
+        lines.append("      PCA-SINDy: SKIPPED")
+    if elastic_result is not None:
+        lines.append(
+            f"      Elastic Net: n_active={elastic_result['n_active']}, "
+            f"R^2={elastic_result['r2_score']:.4f}, "
+            f"active={elastic_result['active_terms']}"
+        )
+    else:
+        lines.append("      Elastic Net: SKIPPED")
+    lines.append("")
+
+    # Section 13 — Novel contributions
+    lines.append("  13. NOVEL CONTRIBUTIONS")
+    if tv_results:
+        tv_bs = tv_results.get('bs')
+        tv_m = tv_results.get('merton')
+        if tv_bs is not None:
+            lines.append(f"      Time-varying SINDy (BS): is_autonomous={tv_bs['is_autonomous']}")
+        if tv_m is not None:
+            lines.append(f"      Time-varying SINDy (Merton): is_autonomous={tv_m['is_autonomous']}")
+    if spectral_weak_result is not None and sindy_call is not None:
+        r2_gauss = float(sindy_call.get('r2_score', float('nan')))
+        r2_spec = float(spectral_weak_result.get('r2_score', float('nan')))
+        lines.append(
+            f"      Spectral weak SINDy R^2={r2_spec:.4f} vs Gaussian SINDy R^2={r2_gauss:.4f}"
+        )
+    if pysr_result is not None:
+        lines.append(
+            f"      PySR status: {pysr_result.get('status', 'unknown')}"
+            + (f" ({pysr_result.get('reason', '')})" if pysr_result.get('status') != 'completed' else '')
+        )
+    if cv_thresh is not None:
+        lines.append(
+            f"      CV-selected threshold: {cv_thresh['best_threshold']:.4f} "
+            f"(BIC threshold from SINDy: {float(sindy_call.get('best_threshold', float('nan'))):.4f})"
+        )
+    lines.append("")
+
+    return lines
+
+
 def main():
     banner()
 
@@ -1888,6 +2702,45 @@ def main():
 
         # IV regime analysis (SPY, QQQ only)
         regime_results = step_iv_regime_analysis(real_results)
+
+        # ============ NEW IMPROVEMENTS (PRD #1-16) ============
+        print("\n" + "=" * 64)
+        print("  TIER 1-4 IMPROVEMENTS")
+        print("=" * 64)
+
+        dupire_results = step_dupire_pipeline(real_results)
+        hc_pinn_call = step_hard_constraint_pinn('call')
+        hc_pinn_put = step_hard_constraint_pinn('put')
+        lp_pinn_call = step_log_price_pinn('call')
+        lp_pinn_put = step_log_price_pinn('put')
+        gp_noise_df = step_gp_noise_robust()
+        spectral_noise_df = step_spectral_noise_robust()
+        ensemble_result = step_ensemble_sindy(data)
+        pca_result = step_pca_sindy(data)
+        elastic_result = step_elastic_net(data)
+        pysr_result = step_pysr(data)
+        spectral_weak_result = step_spectral_weak(data)
+        tv_results = step_time_varying(data, merton_result, real_results)
+        adaptive_w_result = step_adaptive_width_weak(data)
+        cv_thresh = step_cv_threshold(data)
+        boot_cis = step_bootstrap_cis(data)
+        residual_paths = step_residual_plots(data, merton_result, sindy_call, real_results)
+
+        # Save tables for all new improvements
+        try:
+            step_save_new_tables(
+                dupire_results=dupire_results,
+                hc_pinn_call=hc_pinn_call, hc_pinn_put=hc_pinn_put,
+                lp_pinn_call=lp_pinn_call, lp_pinn_put=lp_pinn_put,
+                gp_noise_df=gp_noise_df, spectral_noise_df=spectral_noise_df,
+                ensemble_result=ensemble_result, pca_result=pca_result,
+                elastic_result=elastic_result, pysr_result=pysr_result,
+                spectral_weak_result=spectral_weak_result,
+                tv_results=tv_results, adaptive_w_result=adaptive_w_result,
+                cv_thresh=cv_thresh, boot_cis=boot_cis, sindy_call=sindy_call,
+            )
+        except Exception as e:
+            print(f"  step_save_new_tables SKIPPED: {e}")
 
         # Full library reframing (Fix 4 original)
         print(f"\n" + "=" * 64)
@@ -2534,6 +3387,25 @@ def main():
                             summary_lines.append(
                                 f"       {label}: {', '.join(parts)}"
                             )
+            summary_lines.append("")
+
+        # ── NEW SECTIONS 9-13 (PRD improvements #1-16) ──────────────
+        try:
+            new_lines = build_new_summary_sections(
+                dupire_results=dupire_results,
+                hc_pinn_call=hc_pinn_call, hc_pinn_put=hc_pinn_put,
+                lp_pinn_call=lp_pinn_call, lp_pinn_put=lp_pinn_put,
+                pinn_call=pinn_call, pinn_put=pinn_put,
+                gp_noise_df=gp_noise_df, spectral_noise_df=spectral_noise_df,
+                all_methods_df=all_methods_df,
+                ensemble_result=ensemble_result, pca_result=pca_result,
+                elastic_result=elastic_result, tv_results=tv_results,
+                spectral_weak_result=spectral_weak_result, pysr_result=pysr_result,
+                cv_thresh=cv_thresh, sindy_call=sindy_call,
+            )
+            summary_lines.extend(new_lines)
+        except Exception as e:
+            summary_lines.append(f"  [New sections 9-13 SKIPPED: {e}]")
             summary_lines.append("")
 
         summary_lines.append("=" * 72)

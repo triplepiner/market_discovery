@@ -447,6 +447,272 @@ def symbolic_regression(library, target, feature_names=None, max_time=300):
 
 
 # ---------------------------------------------------------------------------
+# BASELINE 5: Elastic Net (PRD improvement #7)
+# ---------------------------------------------------------------------------
+
+def elastic_net_regression(V, S_grid, t_grid, smooth=True, seed=42):
+    """
+    Elastic Net regression with cross-validated alpha and l1_ratio.
+
+    Elastic Net combines L1 (Lasso) and L2 (Ridge) penalties.  The L2 part
+    handles correlated predictors more gracefully than pure Lasso while
+    L1 still enforces sparsity.  Uses ``sklearn.linear_model.ElasticNetCV``
+    with a 2-D grid over (l1_ratio, alpha).
+
+    Builds the same candidate library as the SINDy pipeline via
+    ``compute_derivatives`` and ``build_candidate_library``.
+
+    Parameters
+    ----------
+    V : ndarray, shape (n_S, n_t)
+        Option price surface.
+    S_grid : ndarray, shape (n_S,)
+    t_grid : ndarray, shape (n_t,)
+    smooth : bool
+        Apply Savitzky-Golay smoothing before differentiation.
+    seed : int
+        Random seed for the CV splitter.
+
+    Returns
+    -------
+    dict
+        coefficients : ndarray, shape (5,)
+        active_terms : list of str
+        r2_score : float
+        term_names : list of str
+        best_alpha : float
+        best_l1_ratio : float
+        n_active : int
+        method : 'elastic_net'
+    """
+    from sklearn.linear_model import ElasticNetCV
+
+    set_all_seeds(seed)
+    logger.info(f"Running Elastic Net (smooth={smooth}, seed={seed})")
+
+    derivs = compute_derivatives(V, S_grid, t_grid, smooth=smooth, trim=5)
+    library = build_candidate_library(
+        derivs['V'], derivs['dVdS'], derivs['d2VdS2'], derivs['S_mesh']
+    )
+    target = derivs['dVdt'].ravel()
+
+    l1_ratios = [0.1, 0.5, 0.7, 0.9, 0.95, 0.99]
+    alphas = np.logspace(-4, 1, 50)
+
+    try:
+        model = ElasticNetCV(
+            l1_ratio=l1_ratios,
+            alphas=alphas,
+            cv=5,
+            max_iter=20000,
+            random_state=seed,
+            n_jobs=1,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model.fit(library, target)
+        coeffs = model.coef_
+        best_alpha = float(model.alpha_)
+        best_l1 = float(model.l1_ratio_)
+    except Exception as exc:
+        logger.error(f"ElasticNetCV failed: {exc}")
+        coeffs = np.zeros(library.shape[1])
+        best_alpha = float('nan')
+        best_l1 = float('nan')
+
+    r2 = _compute_r2(library, target, coeffs)
+    active_mask = np.abs(coeffs) > 1e-8
+    n_active = int(np.sum(active_mask))
+    active_terms = [TERM_NAMES[i] for i in range(len(TERM_NAMES))
+                    if i < len(active_mask) and active_mask[i]]
+
+    logger.info(
+        f"Elastic Net: best_alpha={best_alpha:.4e}, l1_ratio={best_l1:.3f}, "
+        f"R²={r2:.6f}, active={n_active}, "
+        f"coeffs={np.array2string(coeffs, precision=6)}"
+    )
+
+    return {
+        'coefficients': coeffs,
+        'active_terms': active_terms,
+        'r2_score': r2,
+        'term_names': list(TERM_NAMES),
+        'best_alpha': best_alpha,
+        'best_l1_ratio': best_l1,
+        'n_active': n_active,
+        'active_mask': active_mask,
+        'method': 'elastic_net',
+    }
+
+
+# ---------------------------------------------------------------------------
+# BASELINE 6: PySR symbolic regression (PRD improvement #9)
+# ---------------------------------------------------------------------------
+
+def pysr_symbolic_regression(V, S_grid, t_grid, smooth=True,
+                             n_iterations=20, populations=15, max_size=15,
+                             timeout_minutes=5, seed=42):
+    """
+    PySR-based symbolic regression for the Black-Scholes PDE.
+
+    Attempts to discover a closed-form expression for ``dV/dt`` in terms
+    of ``S``, ``dV/dS``, and ``d2V/dS2``.  If PySR is not installed or
+    the underlying Julia backend is unavailable, the function returns a
+    skip dict instead of raising.
+
+    Parameters
+    ----------
+    V : ndarray, shape (n_S, n_t)
+    S_grid : ndarray, shape (n_S,)
+    t_grid : ndarray, shape (n_t,)
+    smooth : bool
+        Apply Savitzky-Golay smoothing before differentiation.
+    n_iterations : int
+        Number of PySR iterations.
+    populations : int
+        Number of populations to evolve in parallel.
+    max_size : int
+        Maximum complexity of discovered expressions.
+    timeout_minutes : int
+        Hard wall-clock timeout for the search (Unix only via SIGALRM).
+    seed : int
+        Random seed for PySR.
+
+    Returns
+    -------
+    dict
+        On success: {status: 'completed', symbolic_expression: str,
+                     r2_score: float, n_terms: int, method: 'pysr'}
+        On skip/failure: {status: 'skipped', reason: str, method: 'pysr'}
+    """
+    set_all_seeds(seed)
+    logger.info(
+        f"Running PySR symbolic regression "
+        f"(iterations={n_iterations}, populations={populations}, "
+        f"max_size={max_size}, timeout={timeout_minutes}min)"
+    )
+
+    # Try import; if missing, skip gracefully
+    try:
+        from pysr import PySRRegressor
+    except Exception as exc:
+        logger.warning(f"PySR import failed: {exc}. Skipping PySR baseline.")
+        return {
+            'status': 'skipped',
+            'reason': f'PySR unavailable: {exc}',
+            'method': 'pysr',
+        }
+
+    # Build features
+    try:
+        derivs = compute_derivatives(V, S_grid, t_grid, smooth=smooth, trim=5)
+    except Exception as exc:
+        logger.warning(f"Derivative computation failed: {exc}")
+        return {
+            'status': 'skipped',
+            'reason': f'Derivative computation failed: {exc}',
+            'method': 'pysr',
+        }
+
+    S_flat = derivs['S_mesh'].ravel()
+    dVdS_flat = derivs['dVdS'].ravel()
+    d2VdS2_flat = derivs['d2VdS2'].ravel()
+    V_flat = derivs['V'].ravel()
+    target = derivs['dVdt'].ravel()
+
+    # Feature matrix: columns S, V, dV/dS, d2V/dS2
+    X = np.column_stack([S_flat, V_flat, dVdS_flat, d2VdS2_flat])
+    variable_names = ['S', 'V', 'dV_dS', 'd2V_dS2']
+
+    # Timeout setup
+    timeout_secs = int(timeout_minutes * 60)
+    use_alarm = hasattr(signal, 'SIGALRM')
+    old_handler = None
+    if use_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(timeout_secs)
+
+    result = None
+    try:
+        try:
+            model = PySRRegressor(
+                niterations=n_iterations,
+                populations=populations,
+                maxsize=max_size,
+                binary_operators=['+', '-', '*', '/'],
+                unary_operators=[],
+                random_state=seed,
+                deterministic=True,
+                parallelism='serial',
+                progress=False,
+                verbosity=0,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"PySRRegressor instantiation failed (likely Julia missing): {exc}"
+            )
+            return {
+                'status': 'skipped',
+                'reason': f'PySR instantiation failed: {exc}',
+                'method': 'pysr',
+            }
+
+        try:
+            model.fit(X, target, variable_names=variable_names)
+        except _TimeoutError:
+            logger.warning(f"PySR timed out after {timeout_minutes} min")
+            return {
+                'status': 'skipped',
+                'reason': f'Timed out after {timeout_minutes} min',
+                'method': 'pysr',
+            }
+        except Exception as exc:
+            logger.warning(f"PySR fit failed: {exc}")
+            return {
+                'status': 'skipped',
+                'reason': f'PySR fit failed: {exc}',
+                'method': 'pysr',
+            }
+
+        # Extract best expression
+        try:
+            best_expr = str(model.sympy())
+            prediction = np.asarray(model.predict(X)).ravel()
+            ss_res = np.sum((target - prediction) ** 2)
+            ss_tot = np.sum((target - np.mean(target)) ** 2)
+            r2 = 1.0 - ss_res / max(ss_tot, 1e-30)
+
+            # Approximate term count: split by + or -
+            n_terms = max(1, len([t for t in best_expr.replace('-', '+').split('+')
+                                  if t.strip()]))
+
+            logger.info(
+                f"PySR: expression={best_expr}, R²={r2:.6f}, n_terms={n_terms}"
+            )
+            result = {
+                'status': 'completed',
+                'symbolic_expression': best_expr,
+                'r2_score': float(r2),
+                'n_terms': int(n_terms),
+                'method': 'pysr',
+            }
+        except Exception as exc:
+            logger.warning(f"PySR result extraction failed: {exc}")
+            result = {
+                'status': 'skipped',
+                'reason': f'Result extraction failed: {exc}',
+                'method': 'pysr',
+            }
+    finally:
+        if use_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Orchestrators
 # ---------------------------------------------------------------------------
 
