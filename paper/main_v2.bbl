@@ -42,12 +42,6 @@ Y.~Feng, K.~Lin, A.~Matlia, and A.~Serdarevic.
 \newblock {\em arXiv preprint arXiv:2511.08606}, 2025.
 \newblock NeurIPS 2025 Workshop on Generative AI in Finance.
 
-\bibitem{forootani2026gnsindy}
-A.~Forootani et~al.
-\newblock {GN-SINDy}: Equation discovery via sparse regression on refined
-  analytical gradients.
-\newblock {\em International Journal of Systems Science}, 2026.
-
 \bibitem{gao2025meshfree}
 H.~Gao, J.~N. Kutz, and B.~Font.
 \newblock Mesh-free sparse identification of nonlinear dynamics.
@@ -89,12 +83,6 @@ Z.~Liu, Y.~Wang, S.~Vaidya, F.~Ruehle, J.~Halverson, M.~Solja{\v{c}}i{\'c},
 \newblock In {\em International Conference on Learning Representations (ICLR)},
   2025.
 
-\bibitem{lu2021deepxde}
-L.~Lu, X.~Meng, Z.~Mao, and G.~E. Karniadakis.
-\newblock {DeepXDE}: A deep learning library for solving differential
-  equations.
-\newblock {\em SIAM Review}, 63(1):208--228, 2021.
-
 \bibitem{merton1976option}
 R.~C. Merton.
 \newblock Option pricing when underlying stock returns are discontinuous.
@@ -121,12 +109,6 @@ C.~E. Rasmussen and C.~K.~I. Williams.
 S.~H. Rudy, S.~L. Brunton, J.~L. Proctor, and J.~N. Kutz.
 \newblock Data-driven discovery of partial differential equations.
 \newblock {\em Science Advances}, 3(4):e1602614, 2017.
-
-\bibitem{schaeffer2017learning}
-H.~Schaeffer.
-\newblock Learning partial differential equations via data discovery and sparse
-  optimization.
-\newblock {\em Proceedings of the Royal Society A}, 473(2197):20160446, 2017.
 
 \bibitem{sirignano2018dgm}
 J.~Sirignano and K.~Spiliopoulos.

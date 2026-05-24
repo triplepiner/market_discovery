@@ -689,3 +689,348 @@ def plot_sindy_kan_activations(synth_const_res: dict[str, Any],
     except Exception as exc:
         logger.warning("plot_sindy_kan_activations failed: %s", exc)
         return None
+
+
+# ---------------------------------------------------------------------------
+# Step 5: Stability / sensitivity sweeps (Agent B1)
+# ---------------------------------------------------------------------------
+
+
+def _load_spy_option_data(ticker: str = 'SPY',
+                            csv_path: Optional[str] = None) -> dict[str, Any]:
+    """Build an ``option_data`` dict from a cached real_chain CSV.
+
+    Looks for ``outputs/tables/real_chain_{ticker}_*.csv`` and selects the
+    most recent snapshot (lexicographic max). Returns the dict shape that
+    ``sindy_kan_dupire_on_ticker`` expects.
+    """
+    import glob
+    if csv_path is None:
+        pattern = os.path.join('outputs', 'tables',
+                                f'real_chain_{ticker}_*.csv')
+        candidates = sorted(glob.glob(pattern))
+        if not candidates:
+            raise FileNotFoundError(f"No cached chain matches {pattern}")
+        csv_path = candidates[-1]
+    df = pd.read_csv(csv_path)
+    S0 = float(df['S0'].iloc[0])
+    r = float(df['r'].iloc[0])
+    if 'mid_price' not in df.columns and 'mid' in df.columns:
+        df = df.rename(columns={'mid': 'mid_price'})
+    return {
+        'S0': S0,
+        'r': r,
+        'q': float(get_dividend_yield(ticker)),
+        'option_df': df,
+        'data_source': csv_path,
+    }
+
+
+def _eval_activations_on_grid(model: MinimalKAN, n_eval: int = 200
+                                ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate both edges on a fixed standardized [-1, 1] grid.
+
+    Returns ``(x_grid, drift_y, diffusion_y)`` of length ``n_eval``.
+    """
+    xs = np.linspace(-1.0, 1.0, int(n_eval)).astype(np.float32)
+    drift = _eval_edge_at_std(model, 0, xs)
+    diff = _eval_edge_at_std(model, 1, xs)
+    return xs.astype(np.float64), drift.astype(np.float64), diff.astype(np.float64)
+
+
+def _summarize_curves(curves: np.ndarray) -> dict[str, np.ndarray]:
+    """Compute mean and 95% CI (2.5 / 97.5 pct) across the first axis."""
+    arr = np.asarray(curves, dtype=np.float64)
+    return {
+        'mean': arr.mean(axis=0),
+        'lower': np.percentile(arr, 2.5, axis=0),
+        'upper': np.percentile(arr, 97.5, axis=0),
+    }
+
+
+def _prepare_spy_inputs(ticker: str = 'SPY', n_k: int = 40, n_tau: int = 15,
+                          k_range: tuple[float, float] = (-0.20, 0.20)
+                          ) -> dict[str, np.ndarray]:
+    """Build (dCdk, d2Cdk2, theta) for SPY once; reused by all sweeps.
+
+    Caches the SVI surface so we don't re-fit it per sweep iteration.
+    """
+    od = _load_spy_option_data(ticker)
+    S0 = float(od['S0'])
+    r = float(od['r'])
+    q = float(od['q'])
+    df = od['option_df']
+    surf = build_logm_surface_svi(df, S0, r, q,
+                                    n_k=n_k, k_range=k_range, n_tau=n_tau)
+    C = surf['C_surface']
+    k_grid = surf['k_grid']
+    tau_grid = surf['tau_grid']
+    svi_params = surf['svi_params']
+    sigma_imp = reconstruct_sigma_imp_grid(svi_params, k_grid, tau_grid)
+    F_grid = compute_forward_prices(S0, r, q, tau_grid)
+    K_grid_2d = np.outer(np.exp(k_grid), F_grid)
+    theta = bs_theta_analytical(S0, K_grid_2d, tau_grid, sigma_imp, r, q)
+    dCdk, d2Cdk2 = _central_dk(C, k_grid)
+    return {
+        'C': C, 'k': k_grid, 'tau': tau_grid,
+        'dCdk': dCdk, 'd2Cdk2': d2Cdk2, 'theta': theta,
+        'S0': S0, 'r': r, 'q': q,
+    }
+
+
+def _smooth_surface_with_kernel(C: np.ndarray, k_grid: np.ndarray,
+                                  tau_grid: np.ndarray, kernel: str,
+                                  seed: int = 42) -> np.ndarray:
+    """Re-smooth the C surface with a GP using the chosen kernel.
+
+    ``kernel`` is one of 'RBF', 'Matern32', 'Matern52'. Returns the GP-mean
+    surface evaluated on the same (k, tau) grid. Falls back to the unsmoothed
+    surface on GP failure.
+    """
+    try:
+        import warnings
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        from sklearn.gaussian_process.kernels import (
+            RBF, Matern, WhiteKernel, ConstantKernel,
+        )
+        kname = str(kernel).lower()
+        K_mesh, T_mesh = np.meshgrid(k_grid, tau_grid, indexing='ij')
+        X = np.column_stack([K_mesh.ravel(), T_mesh.ravel()])
+        y = np.asarray(C, dtype=np.float64).ravel()
+        ok = np.isfinite(y)
+        X, y = X[ok], y[ok]
+        if X.shape[0] < 10:
+            return C
+        k_extent = float(k_grid[-1] - k_grid[0])
+        t_extent = float(tau_grid[-1] - tau_grid[0])
+        ls_init = [max(0.2 * k_extent, 1e-3), max(0.2 * t_extent, 1e-3)]
+        y_var = float(np.var(y))
+        noise_init = max(1e-6, 1e-4 * y_var)
+        if 'matern32' in kname or kname == 'matern_32':
+            inner = Matern(length_scale=ls_init, nu=1.5,
+                            length_scale_bounds=(1e-3, 1e3))
+        elif 'matern52' in kname or kname == 'matern_52':
+            inner = Matern(length_scale=ls_init, nu=2.5,
+                            length_scale_bounds=(1e-3, 1e3))
+        else:
+            inner = RBF(length_scale=ls_init,
+                         length_scale_bounds=(1e-3, 1e3))
+        k_obj = (
+            ConstantKernel(constant_value=max(y_var, 1e-3),
+                            constant_value_bounds=(1e-5, 1e6))
+            * inner
+            + WhiteKernel(noise_level=noise_init,
+                           noise_level_bounds=(1e-10, 1e2))
+        )
+        gp = GaussianProcessRegressor(
+            kernel=k_obj, n_restarts_optimizer=1,
+            normalize_y=True, random_state=int(seed), alpha=0.0,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gp.fit(X, y)
+        X_full = np.column_stack([K_mesh.ravel(), T_mesh.ravel()])
+        y_smooth = gp.predict(X_full).reshape(C.shape)
+        return y_smooth
+    except Exception as exc:
+        logger.warning("_smooth_surface_with_kernel(%s) failed: %s",
+                       kernel, exc)
+        return C
+
+
+def activation_stability_sweep(ticker: str = 'SPY',
+                                 seeds: tuple[int, ...] = (42, 43, 44, 45, 46),
+                                 n_eval: int = 200,
+                                 n_epochs: int = 1500,
+                                 save_csv: str = 'outputs/tables/activation_stability.csv'
+                                 ) -> dict[str, Any]:
+    """Train [2,1] KAN on SPY with multiple seeds; quantify activation CI.
+
+    For each ``seed`` in ``seeds``, fits the KAN and evaluates both edges on
+    a fixed ``n_eval``-point grid in [-1, 1]. Returns a dict with
+    ``x_eval`` (length ``n_eval``) plus per-edge ``mean`` / ``lower`` /
+    ``upper`` arrays for drift and diffusion.
+
+    Writes ``outputs/tables/activation_stability.csv`` with columns
+    ``seed, edge_idx, x_eval, activation``.
+    """
+    inputs = _prepare_spy_inputs(ticker)
+    rows: list[dict[str, float]] = []
+    drift_curves: list[np.ndarray] = []
+    diff_curves: list[np.ndarray] = []
+    x_eval = np.linspace(-1.0, 1.0, int(n_eval))
+    for seed in seeds:
+        try:
+            res = train_kan_dupire_21(
+                inputs['dCdk'], inputs['d2Cdk2'], inputs['theta'],
+                seed=int(seed), n_epochs=int(n_epochs))
+            x, ydrift, ydiff = _eval_activations_on_grid(
+                res['model'], n_eval=n_eval)
+            drift_curves.append(ydrift)
+            diff_curves.append(ydiff)
+            for i, xv in enumerate(x):
+                rows.append({'seed': int(seed), 'edge_idx': 0,
+                              'x_eval': float(xv),
+                              'activation': float(ydrift[i])})
+                rows.append({'seed': int(seed), 'edge_idx': 1,
+                              'x_eval': float(xv),
+                              'activation': float(ydiff[i])})
+        except Exception as exc:
+            logger.warning("activation_stability_sweep seed %d failed: %s",
+                           seed, exc)
+    if save_csv:
+        os.makedirs(os.path.dirname(save_csv), exist_ok=True)
+        pd.DataFrame(rows).to_csv(save_csv, index=False)
+    drift_arr = np.asarray(drift_curves)
+    diff_arr = np.asarray(diff_curves)
+    drift_summary = _summarize_curves(drift_arr) if drift_arr.size > 0 \
+        else {'mean': np.zeros(n_eval), 'lower': np.zeros(n_eval),
+               'upper': np.zeros(n_eval)}
+    diff_summary = _summarize_curves(diff_arr) if diff_arr.size > 0 \
+        else {'mean': np.zeros(n_eval), 'lower': np.zeros(n_eval),
+               'upper': np.zeros(n_eval)}
+    return {
+        'x_eval': x_eval,
+        'drift': drift_summary,
+        'diffusion': diff_summary,
+        'seeds': list(seeds),
+        'n_seeds_ok': int(len(drift_curves)),
+    }
+
+
+def regularization_sensitivity_sweep(
+        ticker: str = 'SPY',
+        l1_weights: tuple[float, ...] = (0.001, 0.01, 0.1),
+        n_eval: int = 200, seed: int = 42,
+        n_epochs: int = 1500,
+        save_csv: str = 'outputs/tables/regularization_sensitivity.csv'
+        ) -> dict[str, Any]:
+    """Sweep L1 regularization strength on a fixed seed; record activations."""
+    inputs = _prepare_spy_inputs(ticker)
+    rows: list[dict[str, float]] = []
+    curves: dict[float, dict[str, np.ndarray]] = {}
+    for lam in l1_weights:
+        try:
+            res = train_kan_dupire_21(
+                inputs['dCdk'], inputs['d2Cdk2'], inputs['theta'],
+                seed=int(seed), n_epochs=int(n_epochs),
+                lambda_l1=float(lam))
+            x, ydrift, ydiff = _eval_activations_on_grid(
+                res['model'], n_eval=n_eval)
+            curves[float(lam)] = {'x': x, 'drift': ydrift, 'diffusion': ydiff}
+            for i, xv in enumerate(x):
+                rows.append({'l1_weight': float(lam), 'edge_idx': 0,
+                              'x_eval': float(xv),
+                              'activation': float(ydrift[i])})
+                rows.append({'l1_weight': float(lam), 'edge_idx': 1,
+                              'x_eval': float(xv),
+                              'activation': float(ydiff[i])})
+        except Exception as exc:
+            logger.warning("regularization sweep lam=%g failed: %s",
+                           lam, exc)
+    if save_csv:
+        os.makedirs(os.path.dirname(save_csv), exist_ok=True)
+        pd.DataFrame(rows).to_csv(save_csv, index=False)
+    return {'curves': curves, 'l1_weights': list(l1_weights)}
+
+
+def kernel_sensitivity_sweep(
+        ticker: str = 'SPY',
+        kernels: tuple[str, ...] = ('RBF', 'Matern32', 'Matern52'),
+        n_eval: int = 200, seed: int = 42,
+        n_epochs: int = 1500,
+        save_csv: str = 'outputs/tables/kernel_sensitivity.csv'
+        ) -> dict[str, Any]:
+    """Sweep GP preprocessing kernel; retrain KAN on each smoothed surface."""
+    inputs = _prepare_spy_inputs(ticker)
+    rows: list[dict[str, float]] = []
+    curves: dict[str, dict[str, np.ndarray]] = {}
+    for kname in kernels:
+        try:
+            C_smooth = _smooth_surface_with_kernel(
+                inputs['C'], inputs['k'], inputs['tau'],
+                kernel=kname, seed=int(seed))
+            dCdk, d2Cdk2 = _central_dk(C_smooth, inputs['k'])
+            res = train_kan_dupire_21(
+                dCdk, d2Cdk2, inputs['theta'],
+                seed=int(seed), n_epochs=int(n_epochs))
+            x, ydrift, ydiff = _eval_activations_on_grid(
+                res['model'], n_eval=n_eval)
+            curves[str(kname)] = {'x': x, 'drift': ydrift,
+                                   'diffusion': ydiff}
+            for i, xv in enumerate(x):
+                rows.append({'kernel': str(kname), 'edge_idx': 0,
+                              'x_eval': float(xv),
+                              'activation': float(ydrift[i])})
+                rows.append({'kernel': str(kname), 'edge_idx': 1,
+                              'x_eval': float(xv),
+                              'activation': float(ydiff[i])})
+        except Exception as exc:
+            logger.warning("kernel sweep %s failed: %s", kname, exc)
+    if save_csv:
+        os.makedirs(os.path.dirname(save_csv), exist_ok=True)
+        pd.DataFrame(rows).to_csv(save_csv, index=False)
+    return {'curves': curves, 'kernels': list(kernels)}
+
+
+def plot_activation_stability_figure(
+        stability: dict[str, Any],
+        save_path: str = 'outputs/figures/paper/activation_stability_figure'
+        ) -> Optional[str]:
+    """2-panel figure: drift + diffusion activations with 95% CI band.
+
+    Uses colorblind-friendly palette: line #0072B2 (blue), band #56B4E9-ish
+    (lighter blue). 300 DPI, serif font, saved as both .png and .pdf.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        plt.rcParams.update({
+            'font.family': 'serif',
+            'font.size': 11,
+            'axes.titlesize': 12,
+            'axes.labelsize': 11,
+            'legend.fontsize': 9,
+        })
+        line_color = '#0072B2'
+        band_color = '#92C5DE'  # lighter blue, colorblind-friendly
+
+        x = stability['x_eval']
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        for ax, key, title, xlab in (
+            (axes[0], 'drift',
+             r'$\varphi_{\mathrm{drift}}(\partial C/\partial k)$',
+             r'standardized $\partial C/\partial k$'),
+            (axes[1], 'diffusion',
+             r'$\varphi_{\mathrm{diffusion}}(\partial^2 C/\partial k^2)$',
+             r'standardized $\partial^2 C/\partial k^2$'),
+        ):
+            s = stability[key]
+            ax.fill_between(x, s['lower'], s['upper'],
+                             color=band_color, alpha=0.55,
+                             label='95% CI across seeds')
+            ax.plot(x, s['mean'], color=line_color, lw=2.2,
+                     label='mean activation')
+            ax.set_title(title)
+            ax.set_xlabel(xlab)
+            ax.set_ylabel('activation (standardized)')
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc='best', frameon=True)
+
+        n_ok = stability.get('n_seeds_ok', 0)
+        fig.suptitle(
+            f"KAN-Dupire activation stability ({n_ok} seeds, SPY)",
+            y=1.02, fontsize=12)
+        plt.tight_layout()
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        png_path = f"{save_path}.png"
+        pdf_path = f"{save_path}.pdf"
+        fig.savefig(png_path, dpi=300, bbox_inches='tight')
+        fig.savefig(pdf_path, bbox_inches='tight')
+        plt.close(fig)
+        return png_path
+    except Exception as exc:
+        logger.warning("plot_activation_stability_figure failed: %s", exc)
+        return None

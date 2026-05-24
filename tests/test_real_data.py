@@ -199,3 +199,113 @@ class TestFallbackOnImportError:
             assert 'strike_range' in result
             assert 'tau_range' in result
             assert 'iv_range' in result
+
+
+# ---------------------------------------------------------------------------
+# Agent B3 ablation-chain + alternative-smoothing tests
+# ---------------------------------------------------------------------------
+
+class TestAblationConfigsRun:
+    """Smoke tests for the 6-config ablation chain on a small mock surface."""
+
+    def _make_mock_snapshot(self):
+        """Build a small option DataFrame from the const-sigma synthetic
+        surface so ablation runners don't need yfinance or the real cache."""
+        from src.sindy_kan import generate_synthetic_dupire_constsig
+
+        d = generate_synthetic_dupire_constsig(
+            sigma=0.20, r=0.05, q=0.0, S0=100.0,
+            n_k=20, n_tau=20, k_range=(-0.20, 0.20),
+            tau_range=(0.05, 1.0))
+        # Convert to a long-form options DataFrame mimicking real cache shape.
+        from src.real_data_v2 import compute_forward_prices
+        k_grid = d['k']; tau_grid = d['tau']; C = d['C']
+        sigma_imp = d['sigma_imp']
+        F_grid = compute_forward_prices(100.0, 0.05, 0.0, tau_grid)
+        rows = []
+        for i, k in enumerate(k_grid):
+            for j, tau in enumerate(tau_grid):
+                K = float(F_grid[j] * np.exp(float(k)))
+                rows.append({
+                    'strike': K,
+                    'expiration': f'2026-{j+1:02d}-15',
+                    'tau': float(tau),
+                    'bid': float(C[i, j]) * 0.99,
+                    'ask': float(C[i, j]) * 1.01,
+                    'mid_price': float(C[i, j]),
+                    'implied_vol': float(sigma_imp[i, j]),
+                    'volume': 200,
+                    'openInterest': 500,
+                    'S0': 100.0,
+                    'r': 0.05,
+                })
+        df = pd.DataFrame(rows)
+        return {'ticker': 'MOCK', 'snapshot': 'mock',
+                'S0': 100.0, 'r': 0.05, 'option_df': df}
+
+    def test_config_A_runs(self):
+        from src.ablation_chain import run_config_A
+        snap = self._make_mock_snapshot()
+        res = run_config_A(snap, q=0.0, n_K=20, n_tau=15)
+        assert 'r2' in res
+        assert np.isfinite(res['r2']), f"Config A R^2 not finite: {res['r2']}"
+
+    def test_config_E_runs(self):
+        from src.ablation_chain import run_config_E
+        snap = self._make_mock_snapshot()
+        res = run_config_E(snap, q=0.0, n_k=20, n_tau=15,
+                           k_range=(-0.15, 0.15))
+        assert np.isfinite(res['r2']), f"Config E R^2 not finite: {res['r2']}"
+        # On a small synthetic surface with sparse expirations the SVI fit
+        # introduces some noise; we only require a strictly positive R^2 to
+        # confirm the pipeline is recovering the dominant Dupire structure.
+        assert res['r2'] > 0.0, f"Config E R^2 non-positive: {res['r2']}"
+
+    def test_config_F_runs(self):
+        from src.ablation_chain import run_config_F
+        snap = self._make_mock_snapshot()
+        # Fewer epochs to keep the test fast; we only assert finiteness.
+        res = run_config_F(snap, q=0.0, n_k=20, n_tau=15,
+                           k_range=(-0.15, 0.15), n_epochs=300, seed=42)
+        assert 'r2' in res and 'train_r2' in res
+        assert np.isfinite(res['r2']), f"Config F R^2 not finite: {res['r2']}"
+        assert np.isfinite(res['train_r2'])
+
+
+class TestCubicSplineSmoothingRuns:
+    """Smoke test: cubic-spline IV smoothing returns a finite surface."""
+
+    def test_cubic_spline_smoothing_runs(self):
+        from src.ablation_chain import cubic_spline_smooth_surface
+        from src.sindy_kan import generate_synthetic_dupire_smile
+        from src.real_data_v2 import compute_forward_prices
+
+        d = generate_synthetic_dupire_smile(
+            sigma_atm=0.20, smile_curvature=0.10, r=0.05, q=0.0, S0=100.0,
+            n_k=20, n_tau=20, k_range=(-0.20, 0.20),
+            tau_range=(0.05, 1.0))
+        F_grid = compute_forward_prices(100.0, 0.05, 0.0, d['tau'])
+        rows = []
+        for i, k in enumerate(d['k']):
+            for j, tau in enumerate(d['tau']):
+                K = float(F_grid[j] * np.exp(float(k)))
+                rows.append({
+                    'strike': K,
+                    'expiration': f'2026-{j+1:02d}-15',
+                    'tau': float(tau),
+                    'mid_price': float(d['C'][i, j]),
+                    'implied_vol': float(d['sigma_imp'][i, j]),
+                    'S0': 100.0,
+                    'r': 0.05,
+                })
+        df = pd.DataFrame(rows)
+        surf = cubic_spline_smooth_surface(
+            df, S0=100.0, r=0.05, q=0.0,
+            n_k=20, n_tau=10, k_range=(-0.15, 0.15))
+        assert surf['C_surface'].shape == (20, 10)
+        assert np.all(np.isfinite(surf['C_surface']))
+        assert np.all(np.isfinite(surf['sigma_surface']))
+        assert np.all(surf['sigma_surface'] > 0)
+        assert np.all(surf['C_surface'] > 0)
+        # n_fits should equal the number of distinct expirations in the input.
+        assert surf['n_fits'] >= 3

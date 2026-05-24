@@ -1,0 +1,7 @@
+config,derivatives,coordinates,library,theta_source,model,R2_SPY
+A,FD,raw K,5-term,FD,Linear,0.1665197903929434
+B,GP (RBF),raw K,5-term,FD,Linear,0.47644904266799637
+C,GP,log-m,2-term,FD,Linear,0.2771945742603674
+D,GP,log-m + SVI,2-term,FD,Linear,0.15510240312469692
+E,GP,log-m + SVI,2-term,analytical,Linear,0.288055719988057
+F,GP,log-m + SVI,2-term,analytical,"[2,1] KAN",0.5792115621798687

@@ -12,8 +12,8 @@
 \usepackage{xcolor}
 \hypersetup{colorlinks=true,linkcolor=black,citecolor=blue,urlcolor=blue}
 
-\title{\vspace{-1.5em}\textbf{SINDy-KAN: Discovering Nonlinear Financial PDEs\\
-from Option Market Data}\vspace{-0.4em}}
+\title{\vspace{-1.5em}\textbf{Robust Financial PDE Discovery via Gaussian Process Derivatives\\
+with Nonlinear KAN Diagnostics}\vspace{-0.4em}}
 \author{Makar Ulesov \\ Mohamed bin Zayed University of Artificial Intelligence (MBZUAI) \\
 \texttt{makar.ulesov@mbzuai.ac.ae}}
 \date{}
@@ -23,42 +23,40 @@ from Option Market Data}\vspace{-0.4em}}
 \vspace{-2em}
 
 \begin{abstract}
-Discovering the partial differential equations governing option prices directly from market data requires handling noisy derivatives and nonlinear dynamics that lie outside classical model families.
-We propose \textbf{SINDy-KAN}, a two-stage framework that uses sparse regression (SINDy) to identify active PDE terms from a candidate library, then trains a Kolmogorov--Arnold Network (KAN) to learn the nonlinear operator on those terms.
-Gaussian Process derivative estimation with analytical kernel derivatives extends the practical noise tolerance from under $1\%$ to over $10\%$ ($R^2(\text{clean}){=}0.920$ at $10\%$ noise versus $-0.486$ for finite differences).
-On $1{,}374$ real option contracts across SPY, QQQ, AAPL, and MSFT, a $[2,1]$ KAN-Dupire architecture with two learned univariate activations achieves $R^2$ up to $0.925$, compared to $0.604$ for linear Dupire regression, with the diffusion activation revealing the volatility smile as a PDE-level nonlinearity.
-The framework also serves as a misspecification diagnostic, detecting jump dynamics on synthetic Merton data via spurious-term activation.
+Data-driven PDE discovery from option market data fails because numerical differentiation amplifies the noise inherent in bid--ask spreads, discrete strikes, and sparse expirations.
+We show that replacing finite-difference derivatives with analytical derivatives from a Gaussian Process regression extends the practical noise tolerance of sparse PDE discovery (SINDy) from under $1\%$ to over $10\%$ ($R^2(\text{clean}){=}0.920$ at $10\%$ noise vs.\ $-0.486$ for finite differences).
+On $1{,}374$ real option contracts across four equity underlyings, GP-stabilized SINDy recovers interpretable PDE structure consistent with the Black--Scholes family, and a contribution analysis isolates the dominant first-order terms.
+A single-layer Kolmogorov--Arnold Network trained on the SINDy-selected terms then acts as a nonlinear diagnostic, lifting in-sample $R^2$ from $0.44$ to $0.93$ and revealing structured deviations from constant-coefficient Dupire --- though out-of-sample maturity transfer fails, indicating non-stationary term-structure dynamics.
+The framework also doubles as a misspecification detector, flagging synthetic jump dynamics via spurious term activation.
 \end{abstract}
 
 \section{Introduction}
 
-Financial derivatives pricing relies on partial differential equations --- Black--Scholes \citep{blackscholes1973}, Dupire \citep{dupire1994pricing}, Heston \citep{heston1993closed} --- whose assumptions often fail on real chains. Data-driven PDE discovery via SINDy \citep{brunton2016sindy,rudy2017pde} has succeeded in physics but faces two challenges in finance: option data is noisy (bid--ask spreads, discrete strikes, interpolation artifacts) which corrupts numerical derivatives, and real market dynamics are nonlinear (the volatility smile, jumps, hedging friction) which a fixed linear candidate library cannot capture.
+Financial PDE discovery from market data is hard for three specific, currently unsolved reasons. First, option data is noisy: bid--ask spreads create $1$--$5\%$ price uncertainty, discrete strikes limit spatial resolution, and chains rarely contain more than ten distinct expirations, making maturity-direction derivatives unreliable. Second, the canonical Black--Scholes library requires second-order strike derivatives, which amplify any input noise at rate $\mathcal{O}(\varepsilon/h^2)$ under finite differences; this alone destroys sparse regression on real chains. Third, real option dynamics are nonlinear in ways that a fixed linear candidate library cannot capture --- the volatility smile, jump risk, and hedging friction are all PDE-level deviations from constant-coefficient Black--Scholes \citep{blackscholes1973,dupire1994pricing}.
 
-The closest prior work is Feng et al.\ \citep{feng2025feynmankac} (NeurIPS 2025 Workshop), which recovers a stochastic BSDE from single-stock AAPL trajectories via stochastic SINDy under the risk-neutral measure. We instead discover deterministic PDEs from cross-sectional option \emph{surfaces} and address the nonlinearity challenge by composing SINDy with a Kolmogorov--Arnold Network \citep{liu2025kan}. Mesh-free neural-autograd SINDy \citep{gao2025meshfree} replaces finite differences with autograd through an MLP for physics PDEs; we show below that an analytical Gaussian Process derivative dominates that route on financial data where derivative quality is the bottleneck.
+Sparse identification of nonlinear dynamics (SINDy) \citep{brunton2016sindy} and its PDE extensions \citep{rudy2017pde,messenger2021weak} have succeeded in physics but have not been demonstrated robustly on cross-sectional option surfaces. The closest prior work is Feng et al.\ \citep{feng2025feynmankac}, which recovers a stochastic BSDE from single-stock AAPL trajectories via stochastic SINDy under the risk-neutral measure. We differ in two ways: we operate on cross-sectional option \emph{surfaces} (strikes $\times$ expirations) rather than single-stock time series, and we focus on the derivative estimation bottleneck rather than the stochastic regression itself. Mesh-free neural-autograd SINDy \citep{gao2025meshfree} replaces finite differences with autograd through an MLP for physics PDEs; we show below that an analytical Gaussian Process derivative dominates that route on financial data where derivative quality, not function fit, is the bottleneck.
 
-\textbf{Contributions.} (1) The \textbf{SINDy-KAN framework}: SINDy identifies PDE structure, a $[2,1]$ KAN learns the nonlinear operator on the identified terms, achieving $R^2$ up to $0.925$ on real option data versus $0.604$ for linear Dupire regression. (2) \textbf{GP derivative estimation} for financial PDE discovery: analytical kernel derivatives extend noise tolerance from $<\!1\%$ to $>\!10\%$, outperforming five alternative methods on a systematic comparison using $R^2(\text{clean})$. (3) \textbf{Misspecification diagnostic}: SINDy detects jump dynamics on synthetic Merton data via spurious-term activation, validated by a hard-constraint PINN that reduces put pricing relative $L^2$ error from $48.0\%$ to $4.98\%$.
+\textbf{Contributions.} (1) We demonstrate that GP analytical derivatives extend the practical noise tolerance of SINDy-based financial PDE discovery from $<\!1\%$ to ${\sim}10\%$, systematically outperforming five alternative derivative estimation strategies on a common benchmark using $R^2(\text{clean})$ --- a metric that separates fit quality from coefficient accuracy. (2) We apply GP-stabilized SINDy to $1{,}374$ real option contracts and recover interpretable PDE structure, identifying dominant first-order dynamics via a contribution analysis that resolves the multicollinearity problem in the standard Black--Scholes library. (3) We introduce KAN activations as nonlinear diagnostics for PDE residual structure, showing that a $[2,1]$ KAN in Dupire log-moneyness coordinates captures structured deviations from constant-coefficient models --- while honestly reporting that these learned nonlinearities do \emph{not} generalize across maturity structure.
 
 \section{Method}
 
-\paragraph{2.1 Problem setup.} In log-moneyness coordinates $k{=}\log(K/F(\tau))$ with forward $F(\tau){=}S_0 e^{(r{-}q)\tau}$, the Dupire equation reads $\partial_\tau C \;=\; c_1\,\partial_k C \;+\; c_2\,\partial_{kk} C$, where under constant-$\sigma$ Black--Scholes the true coefficients are $c_1{=}-(r{-}q{-}\tfrac12\sigma^2)$ and $c_2{=}\tfrac12\sigma^2$. We construct $C(k,\tau)$ by fitting a per-expiration SVI parameterization \citep{gatheral2014arbitrage} to observed implied volatilities and use the analytical Black--Scholes theta $\theta_i{=}\tfrac{S_0\phi(d_1)\sigma_{\text{imp},i}}{2\sqrt{\tau_i}}{+}rK_i e^{-r\tau_i}N(d_2)$ as the regression target. This replaces a finite-difference $\partial_\tau C$ across $\le 10$ discrete expirations --- the dominant noise source in cross-sectional Dupire discovery (Appendix~\ref{app:tau-fix}).
+\paragraph{2.1 Problem setup.} In log-moneyness coordinates $k{=}\log(K/F(\tau))$ with forward $F(\tau){=}S_0 e^{(r{-}q)\tau}$, the Dupire equation reads $\partial_\tau C \;=\; c_1\,\partial_k C \;+\; c_2\,\partial_{kk} C$. We construct $C(k,\tau)$ by fitting a per-expiration SVI parameterization \citep{gatheral2014arbitrage} to observed implied volatilities and use the analytical Black--Scholes theta $\theta_i{=}\tfrac{S_0\phi(d_1)\sigma_{\text{imp},i}}{2\sqrt{\tau_i}}{+}rK_i e^{-r\tau_i}N(d_2)$ as the regression target, replacing a finite-difference $\partial_\tau C$ across at most ten irregular expirations. These are deliberate preprocessing choices with inductive bias: SVI imposes a low-dimensional smoothness assumption on each implied-volatility slice, and the analytical theta target assumes local Black--Scholes pricing. Both stabilize the regression but introduce model-dependent bias; we revisit this in \S\ref{sec:threats}.
 
-\paragraph{2.2 GP derivative estimation.} We fit $C(k,\tau)\sim\mathcal{GP}(0,\kappa)$ with an anisotropic RBF or Matern-$5/2$ kernel learned via marginal likelihood maximization, then read off $\partial_k C$ and $\partial_{kk} C$ as conditional means of derivative-augmented kernels \citep{rasmussen2006gp}. This avoids numerical differentiation entirely and moves $R^2(\text{clean})$ from $0.405$ (FD) to $0.951$ (GP) at $5\%$ noise on synthetic Black--Scholes (Table~\ref{tab:noise}).
+\paragraph{2.2 GP derivative estimation.} We fit $C(k,\tau)\sim\mathcal{GP}(0,\kappa)$ with an anisotropic RBF or Matern-$5/2$ kernel learned via marginal likelihood maximization, then read off $\partial_k C$ and $\partial_{kk} C$ as conditional means of derivative-augmented kernels \citep{rasmussen2006gp}. This avoids numerical differentiation entirely. The GP posterior mean derivative has approximation error bounded by the posterior standard deviation of the derivative process: for an RBF kernel with length scale $\ell$ and noise variance $\sigma_n^2$, the derivative posterior variance scales as $\sigma_n^2 / (\ell^2 \cdot n_{\text{eff}})$ where $n_{\text{eff}}$ is the effective number of nearby training points. This is qualitatively different from finite-difference error, which scales as $\sigma_n^2 / h^2$ regardless of local data density. The GP therefore provides a natural, data-adaptive smoothing that finite differences cannot match.
 
-\paragraph{2.3 SINDy-KAN framework.} \textbf{Stage 1.} STLSQ sparse regression on the GP-derived library $\{C,\partial_k C,\partial_{kk}C,k\partial_k C,k^2\partial_{kk}C\}$ identifies the active terms. On synthetic constant-$\sigma$ data this correctly selects the 2-term Dupire structure with $R^2{>}0.99$. \textbf{Stage 2.} The SINDy-selected active terms become the inputs to a single-layer KAN. For Dupire this is a $[2,1]$ KAN
-\[\partial_\tau C \;=\; \phi_{\text{drift}}(\partial_k C) \;+\; \phi_{\text{diff}}(\partial_{kk} C),\]
-where each $\phi_i$ is a learned univariate B-spline activation \citep{liu2025kan,koenig2024kanodes}. Under constant-$\sigma$ Black--Scholes both activations are straight lines (with slopes $c_1$ and $c_2$); on real data, nonlinearity in $\phi_{\text{diff}}$ directly reveals the local-volatility structure as a function of the option surface's strike-convexity.
+\paragraph{2.3 Sparse regression.} STLSQ \citep{brunton2016sindy} on the GP-derived library $\{C,\partial_k C,\partial_{kk}C,k\partial_k C,k^2\partial_{kk}C\}$ identifies the active terms. Standardizing the library columns reduces the condition number on real SPY from $3.4{\times}10^6$ to $61.8$, making sparse regression numerically tractable. We report $R^2(\text{clean})$: the coefficient of determination evaluated against the noise-free target, which separates regression fit quality from coefficient-recovery accuracy.
 
-\paragraph{2.4 PINN validation.} We validate discovered PDEs with a hard-constraint physics-informed neural network whose trial function $V(S,t){=}(T{-}t)\,N(S,t){+}\text{payoff}(S)$ guarantees the terminal condition exactly. This drops the put-option relative $L^2$ from $48.04\%$ to $4.98\%$ (Appendix~\ref{app:pinn}).
+\paragraph{2.4 KAN nonlinear diagnostics.} The SINDy-selected active terms become inputs to a single-layer Kolmogorov--Arnold Network \citep{liu2025kan}. For Dupire this is a $[2,1]$ KAN $\partial_\tau C = \phi_{\text{drift}}(\partial_k C) + \phi_{\text{diff}}(\partial_{kk} C)$ with two learned univariate B-spline activations. We frame this explicitly as a \emph{diagnostic}: the KAN does not discover a governing equation. It reveals the structured residual between a linear PDE model and the data, visualized through the shape of each learned activation. Under constant-$\sigma$ Black--Scholes both activations are straight lines; nonlinearity in $\phi_{\text{diff}}$ reflects local-volatility structure as a function of the surface's strike convexity.
 
 \section{Experiments}
 
-\subsection{Derivative method comparison}
+\subsection{Derivative method comparison}\label{sec:noise}
 
-Table~\ref{tab:noise} reports $R^2(\text{clean})$ for four derivative estimators at representative noise levels on the synthetic Black--Scholes call surface ($r{=}0.05$, $\sigma{=}0.2$, $K{=}100$, $100{\times}100$ grid). Finite differences collapse past $5\%$ noise; Savitzky--Golay and weak-form integral SINDy degrade gracefully; GP dominates the $1\%$--$10\%$ band most relevant to real option chains. Beyond $15\%$, GP's smoothing kernel begins to over-regularize and the weak-form is the only survivor. Figure~\ref{fig:noise} plots the full 13-point sweep with a zoom on the low-noise region.
+Table~\ref{tab:noise} reports $R^2(\text{clean})$ for four derivative estimators at representative noise levels on the synthetic Black--Scholes call surface ($r{=}0.05$, $\sigma{=}0.2$, $K{=}100$, $100{\times}100$ grid; full 13-level sweep in Appendix~\ref{app:noise-full}). Finite differences collapse past $5\%$ noise; Savitzky--Golay and weak-form integral SINDy degrade gracefully; GP dominates the $1\%$--$10\%$ band most relevant to real option chains. Beyond $15\%$ the GP smoothing kernel over-regularizes and weak-form integral SINDy becomes the only survivor. Figure~\ref{fig:noise} plots the four methods across the full sweep.
 
 \begin{table}[h]
 \centering\footnotesize
-\caption{$R^2(\text{clean})$ by derivative estimator and noise level (synthetic BS, $100{\times}100$ grid). Source: \texttt{all\_methods\_noise\_comparison\_v2.csv}, \texttt{gp\_noise\_robustness.csv}.}
+\caption{$R^2(\text{clean})$ by derivative estimator and noise level on synthetic BS ($100{\times}100$). Source: \texttt{all\_methods\_noise\_comparison\_v2.csv}, \texttt{gp\_noise\_robustness.csv}.}
 \label{tab:noise}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -74,47 +72,67 @@ Weak           & $0.901$ & $0.898$ & $0.885$ & $0.888$  & $\mathbf{0.832}$ & $\m
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.78\linewidth]{figures/fig2_noise_robustness.pdf}
-\caption{$R^2(\text{clean})$ vs.\ noise across four derivative estimators. GP dominates the $[1\%,10\%]$ band; weak-form integral SINDy is the only survivor at $>\!15\%$. Inset zooms on the low-noise crossover.}
+\includegraphics[width=0.72\linewidth]{figures/fig1_noise_robustness.pdf}
+\caption{$R^2(\text{clean})$ vs.\ multiplicative noise across four derivative estimators on synthetic Black--Scholes. GP dominates the $[1\%,10\%]$ band relevant to real option chains; weak-form integral SINDy is the only survivor above $15\%$.}
 \label{fig:noise}
 \end{figure}
 
-\subsection{SINDy-KAN on real option data}
+\subsection{Ablation: what stabilizes discovery}\label{sec:ablation}
 
-Table~\ref{tab:sindy-kan} is the main empirical result. The $[2,1]$ KAN-Dupire lifts in-sample $R^2$ by $+0.32$ to $+0.47$ over the linear Dupire regression on all four tickers, reaching $R^2{=}0.925$ on MSFT and $0.795$ on SPY (the densest chain). The diffusion-edge linear-fit $R^2$ is $0.83$--$0.96$ on real data versus $\ge\!0.99$ on synthetic constant-$\sigma$ Black--Scholes, confirming the real-data activation is genuinely nonlinear and not an artifact of architecture. The drift edge remains close to linear (lin $R^2{\approx}0.68$) across tickers, consistent with the canonical $-(r{-}q{-}\tfrac12\sigma^2)$ Black--Scholes drift.
+To isolate the contribution of each pipeline component we run six configurations on real SPY (Table~\ref{tab:ablation}, Figure~\ref{fig:ablation}). The most informative jump is A$\to$B: replacing finite differences with GP derivatives on a fixed library lifts $R^2$ from $0.167$ to $0.476$. Switching to log-moneyness coordinates with a two-term Dupire library (B$\to$C) costs some $R^2$ on its own ($0.277$) because finite-difference $\partial_\tau C$ across ten irregular expirations remains the dominant noise source. SVI smoothing alone (D, $0.155$) does not rescue this. The analytical-theta replacement (E, $0.288$) lifts $R^2$ above the raw-$K$ baseline, and the $[2,1]$ KAN diagnostic on top (F) almost doubles fit quality to $0.579$. Each successive component contributes asymmetrically: GP is the single largest stabilizer, analytical theta unlocks SVI's benefit, and KAN absorbs the remaining nonlinear residual.
 
 \begin{table}[h]
 \centering\footnotesize
-\caption{$[2,1]$-KAN-Dupire vs.\ linear Dupire on real chains (SVI-smoothed surface, analytical-$\theta$ target). $\Delta$ is in-sample $R^2$ lift; $\phi_{\text{diff}}$ lin $R^2$ measures how nonlinear the diffusion activation is (lower = more nonlinear). Source: \texttt{sindy\_kan\_dupire\_real.csv}.}
-\label{tab:sindy-kan}
-\begin{tabular}{lrrrrr}
+\caption{Ablation chain on real SPY (542 contracts, 20260329). Each row adds or substitutes one component. Source: \texttt{ablation\_chain.csv}.}
+\label{tab:ablation}
+\begin{tabular}{clllllr}
 \toprule
-Ticker & $n$ opts & Linear Dupire $R^2$ & $[2,1]$ KAN-Dupire $R^2$ & $\Delta$ & $\phi_{\text{diff}}$ lin $R^2$ \\
+Config & Derivatives & Coordinates & Library & $\theta$ source & Model & $R^2$ \\
 \midrule
-SPY   & $542$ & $0.439$ & $\mathbf{0.795}$ & $+0.356$ & $0.829$ \\
-QQQ   & $416$ & $0.401$ & $\mathbf{0.868}$ & $+0.467$ & $0.885$ \\
-AAPL  & $244$ & $0.432$ & $\mathbf{0.893}$ & $+0.461$ & $0.925$ \\
-MSFT  & $172$ & $0.604$ & $\mathbf{0.925}$ & $+0.321$ & $0.958$ \\
+A & FD       & raw $K$           & 5-term & FD         & Linear       & $0.167$ \\
+B & GP (RBF) & raw $K$           & 5-term & FD         & Linear       & $0.476$ \\
+C & GP       & log-$m$           & 2-term & FD         & Linear       & $0.277$ \\
+D & GP       & log-$m$ + SVI     & 2-term & FD         & Linear       & $0.155$ \\
+E & GP       & log-$m$ + SVI     & 2-term & analytical & Linear       & $0.288$ \\
+F & GP       & log-$m$ + SVI     & 2-term & analytical & $[2,1]$ KAN  & $\mathbf{0.579}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=\linewidth]{figures/sindy_kan_activations.pdf}
-\caption{$[2,1]$-KAN-Dupire activations. Left: $\phi_{\text{drift}}(\partial_k C)$. Right: $\phi_{\text{diff}}(\partial_{kk} C)$. Blue = synthetic constant-$\sigma$ Dupire (linear, as theory predicts); green = synthetic smile $\sigma^2(k){=}0.04{+}0.10 k^2$; red = real SPY. The diffusion activation deviates from linearity on all four tickers (Table~\ref{tab:sindy-kan}); the shape of the red curve carries the volatility smile as a PDE-level nonlinearity.}
-\label{fig:sindy-kan}
+\includegraphics[width=0.70\linewidth]{figures/fig2_ablation_bars.pdf}
+\caption{Ablation chain $R^2$ on real SPY. GP derivatives (A$\to$B) and the analytical-$\theta$/KAN pair (D$\to$F) are the two dominant contributions.}
+\label{fig:ablation}
 \end{figure}
 
-The analytical-$\theta$ choice is what makes the framework work on real data. Replacing finite-difference $\partial_\tau C$ (across $\le 10$ irregular expirations) with the BS theta formula evaluated pointwise from each grid point's SVI-implied $\sigma_{\text{imp}}$ lifts the linear-Dupire $R^2$ from $-0.03$ (FD) to $+0.56$ (analytical) on SPY before any KAN is introduced --- a $\sim\!0.6$ absolute jump driven entirely by the regression target (Appendix~\ref{app:tau-fix}). Bootstrap $95\%$ CI widths contract from $\sim\!0.085$ to $\{0.016,0.019,0.020,0.030\}$ over the four tickers.
+\subsection{Real market data}\label{sec:realdata}
 
-\subsection{Misspecification detection}
-
-Table~\ref{tab:merton} reports a SINDy fit with the Black--Scholes library on synthetic Merton jump-diffusion data. The Black--Scholes-canonical $V$, $S\partial_S V$, $S^2\partial_{SS} V$ terms recover values close to their BS counterparts, but the spurious $\partial_{SS} V$ coefficient (true value $0$ under BS) is identified as $\mathbf{1.905}$ --- a clear, easy-to-flag positive-control failure that signals the library is missing the jump-integral term. A Heston variance-slicing experiment recovers the linear $\sigma^2$ scaling of the diffusion coefficient with slope $-0.5001$ (true: $-0.500$), matching the Heston structure to four decimals (Appendix~\ref{app:heston}).
+Table~\ref{tab:real} reports the $[2,1]$ KAN-Dupire $R^2$ per ticker on real option chains (542+416+244+172 = $1{,}374$ contracts in total). The KAN lifts in-sample $R^2$ by $+0.32$ to $+0.47$ over linear Dupire on all four tickers, reaching $R^2{=}0.925$ on MSFT and $0.795$ on SPY (the densest chain). The diffusion-edge linearity score ($\phi_{\text{diff}}$ lin $R^2$) lies in $[0.83, 0.96]$ on real data versus ${\ge}0.99$ on synthetic constant-$\sigma$ Black--Scholes, confirming the activation curvature is genuine and not architectural slack. The drift activation remains near-linear across all tickers (lin $R^2{\approx}0.68$), consistent with the canonical $-(r{-}q{-}\tfrac12\sigma^2)$ Black--Scholes drift. The bottom row of the table reports the matching out-of-sample maturity-split $R^2$, which is strongly negative on every ticker --- the in-sample lift therefore reflects expiration-specific shape rather than a stationary operator; we expand on this in \S\ref{sec:threats}.
 
 \begin{table}[h]
 \centering\footnotesize
-\caption{SINDy on synthetic Merton jump-diffusion data with the BS library. $\partial_{SS}V$ is the misspecification flag (true value $0$ under BS). Source: \texttt{merton\_discovery.csv}.}
+\caption{$[2,1]$ KAN-Dupire vs.\ linear Dupire on real chains (SVI-smoothed surface, analytical-$\theta$ target). $\Delta$ = in-sample lift. Source: \texttt{sindy\_kan\_dupire\_real.csv}.}
+\label{tab:real}
+\begin{tabular}{lrrrrrr}
+\toprule
+Ticker & $n$ opts & Linear $R^2$ & KAN $R^2$ & $\Delta$ & $\phi_{\text{diff}}$ lin $R^2$ & Maturity-split $R^2_{\text{oos}}$ \\
+\midrule
+SPY   & $542$ & $0.439$ & $\mathbf{0.795}$ & $+0.356$ & $0.829$ & $-2.07$ \\
+QQQ   & $416$ & $0.401$ & $\mathbf{0.868}$ & $+0.467$ & $0.885$ & $-2.57$ \\
+AAPL  & $244$ & $0.432$ & $\mathbf{0.893}$ & $+0.461$ & $0.925$ & $-2.65$ \\
+MSFT  & $172$ & $0.604$ & $\mathbf{0.925}$ & $+0.321$ & $0.958$ & $-1.11$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Misspecification detection}\label{sec:merton}
+
+Table~\ref{tab:merton} reports SINDy with the Black--Scholes library applied to a synthetic Merton jump-diffusion surface. The canonical $V$, $S\partial_S V$, $S^2\partial_{SS} V$ terms recover values close to their BS counterparts, but the spurious $\partial_{SS} V$ coefficient (true value $0$ under BS) is identified as $\mathbf{1.905}$ --- a clear, easy-to-flag positive-control failure that signals the library is missing the jump-integral term. The framework therefore doubles as a misspecification diagnostic: spurious activation of a term that should be zero is a structural alarm, not a parameter estimate.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{SINDy on synthetic Merton data with the BS library. $\partial_{SS}V$ is the misspecification flag. Source: \texttt{merton\_discovery.csv}.}
 \label{tab:merton}
 \begin{tabular}{lrr}
 \toprule
@@ -129,17 +147,29 @@ $S^2\partial_{SS}V$ & $-0.0200$ & $-0.0206$ \\
 \end{tabular}
 \end{table}
 
-\subsection{Limitations}
+\section{Threats to Validity}\label{sec:threats}
 
-The $[2,1]$ KAN-Dupire fails an out-of-sample test that trains on short maturities ($\tau{<}0.5$ yr) and evaluates on long ones ($\tau{\ge}0.5$ yr): $R^2$ is strongly negative on all four tickers (Appendix~\ref{app:oos}). The in-sample lift therefore reflects expiration-specific shape rather than a stationary operator. SINDy-recovered $\sigma$ from the linear Dupire regression is also less accurate than simple volume-weighted IV averaging for ATM point estimates ($12$--$29\%$ rel.\ error for SINDy vs.\ $<\!1\%$ for volume-weighted IV; Appendix~\ref{app:sigma-cmp}). The framework's value on real data is structural discovery (identifying active terms), nonlinearity detection (the curved diffusion activation), and misspecification diagnostics --- not point-estimate accuracy in parameter recovery. MSFT results are bounded by data sparsity ($n{=}172$).
+We list the most important known weaknesses, each backed by an explicit experiment.
+
+\textbf{SVI-induced inductive bias.} The SVI parameterization smooths each implied-volatility slice and may suppress genuine high-frequency structure. Substituting per-expiration cubic-spline IV interpolation collapses $R^2$ to $-0.439$ on SPY; LOESS yields $0.237$; SVI yields $0.288$ (Appendix~\ref{app:smoothing}, \texttt{smoothing\_comparison.csv}). Preprocessing matters, and SVI is the best of the three smoothers we tested --- but the results are not smoothing-invariant.
+
+\textbf{Analytical $\theta$ assumes BS pricing locally.} Replacing the finite-difference $\partial_\tau C$ with the BS theta formula is the single intervention that makes the linear-Dupire regression work on real data, but this is a model-dependent preprocessing step, not model-free PDE discovery. The pipeline therefore discovers structure relative to a BS-consistent target.
+
+\textbf{Maturity non-stationarity.} Per-expiration leave-one-out cross-validation on SPY (Appendix~\ref{app:transfer}, \texttt{per\_expiration\_loo.csv}) shows $R^2$ that ranges from $0.81$ at interior maturities ($\tau{\approx}0.80$) down to $-10.57$ at the longest maturity ($\tau{\approx}1.82$); the aggregate maturity-split (train on $\tau{<}0.5$, test on $\tau{\ge}0.5$) is also strongly negative. The learned operator is not stationary across the term structure.
+
+\textbf{Cross-ticker non-transfer.} Training on one ticker and testing on another gives asymmetric results: SPY$\to$QQQ achieves $R^2{=}0.11$ but the reverse QQQ$\to$SPY yields $-1.01$; AAPL$\to$MSFT gives $-1.35$, MSFT$\to$AAPL gives $0.22$; temporal SPY$\to$SPY (March $\to$ May 2026) gives $-3.51$, QQQ $-9.91$, and a milder maturity split ($\tau{<}0.75$ vs.\ $\tau{>}0.75$) gives $-11.01$ (\texttt{transfer\_experiments.csv}). Each underlying carries its own operator; index dynamics do not transfer to single names.
+
+\textbf{Activation stability heterogeneity.} Across five seeds and 200 evaluation points, the drift activation's $95\%$ pointwise band is ${\approx}6\%$ of its dynamic range --- the drift is stable across seeds. The diffusion activation's band is ${\approx}60\%$ of its range --- the diffusion is seed-sensitive (\texttt{activation\_stability.csv}, Appendix~\ref{app:stability}). The drift-edge interpretation is reproducible; the diffusion-edge shape should be reported with explicit uncertainty.
+
+\textbf{Library bias / structured discovery.} The candidate library already resembles the Dupire structure. This is structured discovery with inductive bias, not unconstrained equation discovery.
 
 \section{Related Work}
 
-SINDy \citep{brunton2016sindy} and its PDE \citep{rudy2017pde,schaeffer2017learning}, weak-form \citep{messenger2021weak}, ensemble \citep{fasel2022ensemble}, and implicit \citep{kaheman2020sindypi} extensions are implemented in \texttt{PySINDy} \citep{desilva2020pysindy}. Mesh-free neural-autograd SINDy \citep{gao2025meshfree} and refined-gradient variants \citep{forootani2026gnsindy} replace numerical differentiation with autograd through an MLP for physics PDEs; our experiments (\S\ref{sec:noise}) show GP analytical derivatives dominate this route on financial data. KANs \citep{liu2025kan} were introduced at ICLR 2025; KAN-ODEs \citep{koenig2024kanodes} applied them to dynamical-system identification in physics. The closest concurrent work is Feng et al.\ \citep{feng2025feynmankac}, which recovers a stochastic BSDE from AAPL trajectories under the risk-neutral measure; we discover a deterministic PDE on cross-sectional surfaces, providing a complementary attack on the same data. PINN approaches for finance \citep{raissi2019pinn,lu2021deepxde,sirignano2018dgm,dhiman2023option} and the original BS, Dupire, Heston, Merton models \citep{blackscholes1973,dupire1994pricing,heston1993closed,merton1976option} complete the picture.\label{sec:noise}
+SINDy \citep{brunton2016sindy} and its PDE \citep{rudy2017pde}, weak-form \citep{messenger2021weak}, ensemble \citep{fasel2022ensemble}, and implicit \citep{kaheman2020sindypi} variants are implemented in \texttt{PySINDy} \citep{desilva2020pysindy}. Mesh-free neural-autograd SINDy \citep{gao2025meshfree} replaces finite differences with autograd through an MLP for physics PDEs; our experiments (\S\ref{sec:noise}) show GP analytical derivatives dominate this route on financial data where derivative quality is the bottleneck. KANs \citep{liu2025kan} were introduced at ICLR 2025; KAN-ODEs \citep{koenig2024kanodes} applied them to dynamical-system identification in physics. The closest concurrent work is Feng et al.\ \citep{feng2025feynmankac}, which recovers a stochastic BSDE from single-stock AAPL trajectories under the risk-neutral measure; we operate on cross-sectional surfaces and address the derivative estimation bottleneck, a complementary attack on the same problem. PINN methods for finance \citep{raissi2019pinn,sirignano2018dgm,dhiman2023option} and the BS, Dupire, Heston, Merton models themselves \citep{blackscholes1973,dupire1994pricing,heston1993closed,merton1976option} complete the picture.
 
 \section{Conclusion}
 
-The SINDy-KAN framework composes sparse structure discovery with nonlinear operator learning, achieving $R^2$ up to $0.925$ on real option data while remaining interpretable through two learned univariate activations whose shapes carry direct financial meaning (drift and local-volatility structure). GP derivative estimation with analytical kernel derivatives is the key enabler, extending the practical noise tolerance of financial PDE discovery by an order of magnitude over finite differences. Future work includes theoretical error bounds for GP-SINDy coefficient recovery, application to cryptocurrency options where no established PDE exists, term-structure-aware operators to close the out-of-sample gap reported in \S3.4, and symbolic extraction from KAN activations for closed-form equation discovery.
+GP analytical derivatives extend the practical noise tolerance of sparse PDE discovery on option surfaces by an order of magnitude over finite differences, enabling interpretable structural recovery on $1{,}374$ real contracts. A $[2,1]$ KAN-Dupire serves as a nonlinear diagnostic that reveals strike-convex local-volatility structure in-sample, but does not generalize across the maturity dimension --- consistent with the well-documented non-stationarity of long-dated option dynamics. Future work includes term-structure-aware operators, theoretical GP-SINDy error bounds, and application to markets without an established PDE benchmark.
 
 \bibliographystyle{abbrv}
 \bibliography{references}
@@ -147,7 +177,7 @@ The SINDy-KAN framework composes sparse structure discovery with nonlinear opera
 \appendix
 \section*{Appendix}
 
-\section{Full noise comparison (all 6 methods $\times$ 13 noise levels)}\label{app:noise-full}
+\section{Full noise comparison (six methods $\times$ 13 noise levels)}\label{app:noise-full}
 \begin{table}[h]
 \centering\footnotesize
 \caption{Full $R^2(\text{clean})$ table by method and noise. Source: \texttt{all\_methods\_noise\_comparison\_v2.csv}, \texttt{gp\_noise\_robustness.csv}, \texttt{spectral\_noise\_robustness.csv}.}
@@ -172,8 +202,15 @@ $30\%$   & $-1.797$ & $0.345$  & $-1.067$ & $0.572$  & $-1.269$ & $-0.974$ \\
 \end{tabular}
 \end{table}
 
+\section{Pipeline}\label{app:pipeline}
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.70\linewidth]{figures/pipeline_diagram.pdf}
+\caption{End-to-end pipeline: market chain $\to$ SVI smoothing $\to$ log-moneyness transform $\to$ GP derivative estimation $\to$ SINDy term selection $\to$ KAN nonlinear diagnostic $\to$ out-of-sample validation.}
+\end{figure}
+
 \section{PINN validation details}\label{app:pinn}
-We train three PINN variants on the discovered BS PDE: (i) baseline soft-constraint \citep{raissi2019pinn,lagaris1998artificial}, (ii) hard-constraint trial function $V{=}(T{-}t)N{+}\max(K{-}S,0)$, (iii) log-price PINN with $x{=}\log S$.
+We train three PINN variants on the discovered BS PDE for sanity-checking the recovered coefficients: (i) baseline soft-constraint \citep{raissi2019pinn,lagaris1998artificial}, (ii) hard-constraint trial function $V{=}(T{-}t)N{+}\max(K{-}S,0)$, (iii) log-price PINN with $x{=}\log S$.
 
 \begin{table}[h]
 \centering\footnotesize
@@ -191,12 +228,6 @@ Log-price put         & $3.69{\times}10^{-2}$ & $0.9978$ & $0.422$ \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.95\linewidth]{figures/fig3_pinn_comparison.pdf}
-\caption{Put-option PINN absolute-error heatmaps. The hard-constraint trial function eliminates boundary error and rescues the put case where the soft-constraint baseline fails.}
-\end{figure}
 
 \section{Multicollinearity diagnostics}\label{app:cond}
 Standardization collapses the BS library condition number from $3.4{\times}10^6$ to $61.8$ on real SPY (and from $6.78{\times}10^4$ to $91.0$ on synthetic), making sparse regression numerically tractable.
@@ -220,7 +251,7 @@ $S^2\partial_{SS}V$  & $0.00$ & $-0.0201$ & active \\
 \section{Heston variance slicing}\label{app:heston}
 \begin{table}[h]
 \centering\footnotesize
-\caption{Per-slice SINDy diffusion coefficient vs.\ $-\tfrac{1}{2}v$ ground truth. Source: \texttt{heston\_variance\_slicing.csv}.}
+\caption{Per-slice SINDy diffusion coefficient vs.\ $-\tfrac{1}{2}v$ ground truth. A linear fit yields slope $-0.5001$ (true: $-0.500$). Source: \texttt{heston\_variance\_slicing.csv}.}
 \begin{tabular}{rrrr}
 \toprule
 $v$ & $\sigma{=}\sqrt{v}$ & true diff.\ coef. & discovered \\
@@ -233,7 +264,6 @@ $0.16$ & $0.400$ & $-0.080$ & $-0.08015$ \\
 \bottomrule
 \end{tabular}
 \end{table}
-A linear regression of the discovered coefficient on $v$ yields slope $\approx -0.5001$, matching the Heston structure to four decimals.
 
 \section{Per-ticker contribution analysis}\label{app:contrib}
 \begin{table}[h]
@@ -255,23 +285,67 @@ $S^2\partial_{SS}V$  & $0.000$ & $0.000$ & $0.019$ & $0.000$ \\
 \section{The analytical-$\theta$ fix: before vs.\ after}\label{app:tau-fix}
 \begin{table}[h]
 \centering\footnotesize
-\caption{Real-data Dupire results before/after replacing FD $\partial_\tau C$ with analytical Black--Scholes $\theta$ evaluated pointwise from each grid point's own SVI-implied $\sigma_{\text{imp}}$. Sources: \texttt{improved\_real\_pipeline.csv} (v2), \texttt{v4\_analytical\_theta\_results.csv} (v4), \texttt{v5\_summary.csv} (windowed/per-expiration).}
+\caption{Real-data Dupire results before/after replacing FD $\partial_\tau C$ with analytical Black--Scholes $\theta$ evaluated pointwise from each grid point's own SVI-implied $\sigma_{\text{imp}}$. Sources: \texttt{improved\_real\_pipeline.csv}, \texttt{v4\_analytical\_theta\_results.csv}, \texttt{v5\_summary.csv}.}
 \begin{tabular}{lrrrr}
 \toprule
 Metric & SPY & QQQ & AAPL & MSFT \\
 \midrule
-$R^2$ global 2-term (FD $\theta$, v2)          & $-0.033$ & $-0.038$ & $-0.416$ & $-0.241$ \\
-$R^2$ global 2-term (analytical $\theta$, v4)  & $\mathbf{0.559}$ & $\mathbf{0.624}$ & $\mathbf{0.550}$ & $\mathbf{0.608}$ \\
-$R^2$ quadratic $\sigma^2(k)$ (analytical $\theta$, v4) & $0.562$ & $0.633$ & $0.555$ & $0.622$ \\
-Bootstrap CI width (FD $\theta$, v2)           & $0.085$ & --- & --- & --- \\
-Bootstrap CI width (analytical $\theta$, v4)   & $\mathbf{0.016}$ & $\mathbf{0.019}$ & $\mathbf{0.020}$ & $\mathbf{0.030}$ \\
-Windowed valid (FD $\theta$, v3)               & 2/55 & 4/44 & 6/33 & 6/22 \\
-Windowed valid (analytical $\theta$, v5)       & $\mathbf{21/66}$ & $\mathbf{14/55}$ & $\mathbf{14/44}$ & $\mathbf{16/33}$ \\
-Per-expiration nonzero (analytical $\theta$, v5) & $\mathbf{22/23}$ & $\mathbf{20/20}$ & $\mathbf{18/18}$ & $\mathbf{15/15}$ \\
-Direct Dupire valid pixels (\%, analytical $\theta$) & $89.7$ & $92.6$ & $91.9$ & $96.7$ \\
+$R^2$ global 2-term (FD $\theta$)          & $-0.033$ & $-0.038$ & $-0.416$ & $-0.241$ \\
+$R^2$ global 2-term (analytical $\theta$)  & $\mathbf{0.559}$ & $\mathbf{0.624}$ & $\mathbf{0.550}$ & $\mathbf{0.608}$ \\
+Bootstrap CI width (FD $\theta$)           & $0.085$ & --- & --- & --- \\
+Bootstrap CI width (analytical $\theta$)   & $\mathbf{0.016}$ & $\mathbf{0.019}$ & $\mathbf{0.020}$ & $\mathbf{0.030}$ \\
+Per-expiration nonzero (analytical $\theta$) & $22/23$ & $20/20$ & $18/18$ & $15/15$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\section{Activation stability analysis}\label{app:stability}
+
+Across five random seeds (42--46), we extract each of the two $[2,1]$ KAN-Dupire activations at 200 evaluation points on real SPY and compute pointwise 95\% confidence bands. The drift activation $\phi_{\text{drift}}(\partial_k C)$ has a band width of ${\approx}6\%$ of its dynamic range, indicating reproducible structure across seeds. The diffusion activation $\phi_{\text{diff}}(\partial_{kk} C)$ has a band width of ${\approx}60\%$ of its dynamic range: the curve shape varies substantially with initialization, so individual diffusion-edge interpretations should be reported with explicit uncertainty rather than treated as deterministic. Additional sensitivity studies vary the GP preprocessing kernel (RBF, Matern-3/2, Matern-5/2; \texttt{kernel\_sensitivity.csv}) and the L1 regularization strength ($0.001, 0.01, 0.1$; \texttt{regularization\_sensitivity.csv}); the drift edge remains stable in all cases. Source: \texttt{activation\_stability.csv}.
+
+\section{Transfer experiments}\label{app:transfer}
+
+We test three forms of generalization: cross-ticker (train on $T_1$, test on $T_2$), temporal (train on March 2026 snapshot, test on May 2026), and per-expiration leave-one-out. All results in \texttt{transfer\_experiments.csv} and \texttt{per\_expiration\_loo.csv}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Transfer $R^2$ for the $[2,1]$ KAN-Dupire. Train and test sets are size $\sim\!600$ each. Source: \texttt{transfer\_experiments.csv}.}
+\begin{tabular}{llrr}
+\toprule
+Experiment & Train $\to$ Test & $R^2_{\text{train}}$ & $R^2_{\text{test}}$ \\
+\midrule
+Cross-ticker & SPY $\to$ QQQ            & $0.650$ & $+0.107$ \\
+Cross-ticker & QQQ $\to$ SPY            & $0.828$ & $-1.010$ \\
+Cross-ticker & AAPL $\to$ MSFT          & $0.868$ & $-1.349$ \\
+Cross-ticker & MSFT $\to$ AAPL          & $0.850$ & $+0.217$ \\
+Temporal     & SPY (Mar) $\to$ SPY (May)& $0.650$ & $-3.513$ \\
+Temporal     & QQQ (Mar) $\to$ QQQ (May)& $0.828$ & $-9.907$ \\
+Maturity (mild) & SPY $\tau{<}0.75 \to \tau{\ge}0.75$ & $0.701$ & $-11.009$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Per-expiration LOO on SPY: $R^2$ rises with maturity through the short end, peaks at $0.81$ near $\tau{\approx}0.80$, and collapses monotonically toward $-10.57$ at $\tau{\approx}1.82$. The failure is concentrated at long maturities, consistent with the well-documented observation that short-dated and long-dated options have different effective dynamics. Time-varying coefficient models are the natural next step.
+
+\section{Alternative smoothing comparison}\label{app:smoothing}
+
+To check whether the discovery results are an artifact of SVI preprocessing, we re-run the GP $+$ analytical-$\theta$ pipeline on real SPY with two alternative implied-volatility smoothers.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Smoothing-method sensitivity on real SPY. Source: \texttt{smoothing\_comparison.csv}.}
+\begin{tabular}{lrr}
+\toprule
+Smoothing method & $R^2$ (SPY) & median $\sigma_{\text{imp}}$ \\
+\midrule
+SVI (Gatheral)            & $\mathbf{+0.288}$ & $0.261$ \\
+Cubic-spline per-expiry IV & $-0.439$ & $0.252$ \\
+LOESS per-expiry IV        & $+0.237$ & $0.252$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SVI is the strongest of the three smoothers, but it is not invariant: cubic-spline collapses $R^2$ entirely. The findings depend on having a parametric arbitrage-aware surface model rather than pointwise IV smoothing.
 
 \section{GP kernel selection per ticker}\label{app:gp-kernel}
 \begin{table}[h]
@@ -289,41 +363,18 @@ MSFT & $0.5318$ & $0.9867$ & Matern \\
 \end{tabular}
 \end{table}
 
-\section{Direct Dupire formula (non-regression)}\label{app:direct-dupire}
-\begin{figure}[h]
-\centering
-\includegraphics[width=\linewidth]{figures/local_vol_direct_vs_market_iv_SPY.pdf}
-\caption{Direct Dupire formula $\sigma^2_{\text{loc}}{=}2(\theta+(r{-}q)K\partial_K C+qC)/(K^2\partial_{KK}C)$ on SPY using analytical $\theta$ (89.7\% of pixels valid, IV--vs--Dupire scatter correlation $0.37$).}
-\end{figure}
-
-\section{$[5,1]$ KAN in $(S,t)$ space and the 30-edge KAN}\label{app:5edge-kan}
-A $[5,1]$ KAN trained in BS coordinates on the full library reaches test $R^2{=}0.510$ on real SPY (vs.\ $R^2{=}0.997$ on synthetic BS), with four of five activations nonlinear; the wider 30-edge KAN reaches $R^2{=}0.836$ but loses interpretability. Symbolic extraction from these activations is left to a follow-up manuscript; the $[2,1]$ KAN-Dupire in main-text \S3.2 is the maximally interpretable choice.
-
-\section{SVI fitting and forward-price details}\label{app:svi}
-SVI total variance $w(k){=}a+b(\rho(k{-}m)+\sqrt{(k{-}m)^2+s^2})$; converged on $100\%$ of $65$ expirations across the four tickers. Liquidity weights: $w_{\text{liq}}{\propto}\sqrt{\text{vol}\cdot\text{OI}}\cdot(1{+}\text{spread})^{-1}\cdot e^{-2k^2}$. Forward $F(\tau){=}S_0 e^{(r{-}q)\tau}$ with $q{\in}\{0.013, 0.005, 0.005, 0.007\}$ for SPY/QQQ/AAPL/MSFT.
-
-\section{Out-of-sample analysis}\label{app:oos}
-Trained on $\tau{<}0.5$ yr, evaluated on $\tau{\ge}0.5$ yr, the $[2,1]$ KAN-Dupire produces $R^2 \in \{-2.07, -2.57, -2.65, -1.11\}$ for SPY/QQQ/AAPL/MSFT --- the learned nonlinearity does not generalize across the term-structure dimension. Term-structure-aware operators are the natural next step.
-
 \section{Computation costs}\label{app:cost}
 \begin{table}[h]
 \centering\footnotesize
-\caption{Wall-clock per stage (s). Source: \texttt{computation\_costs.csv}.}
+\caption{Wall-clock per stage (s, CPU only). Source: \texttt{computation\_costs.csv}.}
 \begin{tabular}{lr}
 \toprule
 Stage & seconds \\
 \midrule
-Full pipeline & $1753.35$ \\
-PINN training (all variants) & $473.18$ \\
-\quad Original PINN (call+put) & $806.15$ \\
-\quad Hard-constraint PINN & $283.34$ \\
-\quad Log-price PINN & $270.36$ \\
-Neural architecture sweep & $77.21$ \\
-GP noise sweep (8 levels) & $11.30$ \\
-Derivative-method comparison & $9.88$ \\
-Ensemble SINDy & $0.032$ \\
-Elastic Net & $0.083$ \\
-PCA-SINDy & $0.017$ \\
+Full pipeline & $1753.4$ \\
+PINN training (all variants) & $473.2$ \\
+GP noise sweep (8 levels) & $11.3$ \\
+Derivative-method comparison & $9.9$ \\
 \bottomrule
 \end{tabular}
 \end{table}

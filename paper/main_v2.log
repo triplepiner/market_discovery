@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  24 MAY 2026 17:23
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  25 MAY 2026 00:15
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -563,79 +563,87 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <9> on input line 28.
+(Font)              <9> on input line 27.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <5> on input line 28.
+(Font)              <5> on input line 27.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <10> on input line 39.
+(Font)              <10> on input line 35.
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <7> on input line 39.
- [1
+(Font)              <7> on input line 35.
+
+Overfull \hbox (35.6463pt too wide) in paragraph at lines 43--44
+\T1/lmr/m/n/10 (-20) ter-i-za-tion [[]] to ob-served im-plied volatil-i-ties an
+d use the an-a-lyt-i-cal Black--Scholes theta $\OML/lmm/m/it/10 ^^R[][][][]rK[]
+e[]N\OT1/lmr/m/n/10 (-20) (\OML/lmm/m/it/10 d[]\OT1/lmr/m/n/10 (-20) )$
+ []
+
+[1
 
 {/usr/local/texlive/2026basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/us
 r/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/usr/local/t
 exlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/local/texlive/20
 26basic/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/usr/local/texlive/2026bas
 ic/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
-Overfull \hbox (68.29565pt too wide) in paragraph at lines 47--48
- []\T1/lmr/bx/n/10 (-20) 2.3 SINDy-KAN frame-work.[] Stage 1. \T1/lmr/m/n/10 (-
-20) STLSQ sparse re-gres-sion on the GP-derived li-brary $\OMS/lmsy/m/n/10 f\OM
-L/lmm/m/it/10 C; @[]C; @[]C; k@[]C; k[]@[]C\OMS/lmsy/m/n/10 g$
- []
-
-<figures/fig2_noise_robustness.pdf, id=145, 568.19878pt x 353.24911pt>
-File: figures/fig2_noise_robustness.pdf Graphic file (type pdf)
-<use figures/fig2_noise_robustness.pdf>
-Package pdftex.def Info: figures/fig2_noise_robustness.pdf  used on input line 
-77.
-(pdftex.def)             Requested size: 366.40834pt x 227.7981pt.
-
-LaTeX Warning: `h' float specifier changed to `ht'.
+<figures/fig1_noise_robustness.pdf, id=139, 463.10577pt x 296.29758pt>
+File: figures/fig1_noise_robustness.pdf Graphic file (type pdf)
+<use figures/fig1_noise_robustness.pdf>
+Package pdftex.def Info: figures/fig1_noise_robustness.pdf  used on input line 
+75.
+(pdftex.def)             Requested size: 338.22418pt x 216.39941pt.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/sindy_kan_activations.pdf, id=147, 786.15643pt x 312.72899pt>
-File: figures/sindy_kan_activations.pdf Graphic file (type pdf)
-<use figures/sindy_kan_activations.pdf>
-Package pdftex.def Info: figures/sindy_kan_activations.pdf  used on input line 
-104.
-(pdftex.def)             Requested size: 469.75502pt x 186.87056pt.
+[2]
+<figures/fig2_ablation_bars.pdf, id=168, 462.37743pt x 281.5939pt>
+File: figures/fig2_ablation_bars.pdf Graphic file (type pdf)
+<use figures/fig2_ablation_bars.pdf>
+Package pdftex.def Info: figures/fig2_ablation_bars.pdf  used on input line 104
+.
+(pdftex.def)             Requested size: 328.82707pt x 200.25961pt.
+
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[2] [3 <./figures/fig2_noise_robustness.pdf>] [4 <./figures/sindy_kan_activatio
-ns.pdf>] (./main_v2.bbl [5])
+[3 <./figures/fig1_noise_robustness.pdf>] [4 <./figures/fig2_ablation_bars.pdf>
+] (./main_v2.bbl [5])
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <14.4> on input line 150.
+(Font)              <14.4> on input line 180.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 150.
+(hyperref)                removing `math shift' on input line 180.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\times' on input line 150.
+(hyperref)                removing `\times' on input line 180.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 150.
+(hyperref)                removing `math shift' on input line 180.
+
+[6]
+<figures/pipeline_diagram.pdf, id=356, 281.85298pt x 570.93298pt>
+File: figures/pipeline_diagram.pdf Graphic file (type pdf)
+<use figures/pipeline_diagram.pdf>
+Package pdftex.def Info: figures/pipeline_diagram.pdf  used on input line 208.
+(pdftex.def)             Requested size: 328.82707pt x 666.09845pt.
 
 
-Underfull \hbox (badness 2790) in paragraph at lines 180--180
-[]\T1/lmr/m/n/10 (+20) Table 5: []PINN vari-ants on syn-thetic BS sur-faces. So
+LaTeX Warning: Float too large for page by 51.61287pt on input line 210.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+Underfull \hbox (badness 2790) in paragraph at lines 217--217
+[]\T1/lmr/m/n/10 (+20) Table 6: []PINN vari-ants on syn-thetic BS sur-faces. So
 urce: \T1/lmtt/m/n/10 pinn_results_{call,put}.csv\T1/lmr/m/n/10 (+20) ,
  []
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/fig3_pinn_comparison.pdf, id=369, 662.97731pt x 304.19461pt>
-File: figures/fig3_pinn_comparison.pdf Graphic file (type pdf)
-<use figures/fig3_pinn_comparison.pdf>
-Package pdftex.def Info: figures/fig3_pinn_comparison.pdf  used on input line 1
-97.
-(pdftex.def)             Requested size: 446.26582pt x 204.76086pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
@@ -643,94 +651,52 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 285.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\theta' on input line 285.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 285.
+
+
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[6]
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 255.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\theta' on input line 255.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 255.
-
+[7]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/local_vol_direct_vs_market_iv_SPY.pdf, id=376, 1000.66223pt x 333.6953
-3pt>
-File: figures/local_vol_direct_vs_market_iv_SPY.pdf Graphic file (type pdf)
-<use figures/local_vol_direct_vs_market_iv_SPY.pdf>
-Package pdftex.def Info: figures/local_vol_direct_vs_market_iv_SPY.pdf  used on
- input line 295.
-(pdftex.def)             Requested size: 469.75502pt x 156.64842pt.
+[8]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `math shift' on input line 382.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `\sigma' on input line 382.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `subscript' on input line 382.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `math shift' on input line 382.
 
 
-Overfull \hbox (1.25835pt too wide) in paragraph at lines 306--307
-\T1/lmr/m/n/10 (-20) Trained on $\OML/lmm/m/it/10 ^^\[]\OT1/lmr/m/n/10 (-20) 0\
-OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 5$ \T1/lmr/m/n/10 (-20) yr, eval-u-ated 
-on $\OML/lmm/m/it/10 ^^\[]\OT1/lmr/m/n/10 (-20) 0\OML/lmm/m/it/10 :\OT1/lmr/m/n
-/10 (-20) 5$ \T1/lmr/m/n/10 (-20) yr, the $\OT1/lmr/m/n/10 (-20) [2\OML/lmm/m/i
-t/10 ; \OT1/lmr/m/n/10 (-20) 1]$ \T1/lmr/m/n/10 (-20) KAN-Dupire pro-duces $\OM
-L/lmm/m/it/10 R[] \OMS/lmsy/m/n/10 2 f^^@\OT1/lmr/m/n/10 (-20) 2\OML/lmm/m/it/1
-0 :\OT1/lmr/m/n/10 (-20) 07\OML/lmm/m/it/10 ; \OMS/lmsy/m/n/10 ^^@\OT1/lmr/m/n/
-10 (-20) 2\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 57\OML/lmm/m/it/10 ; \OMS/lms
-y/m/n/10 ^^@\OT1/lmr/m/n/10 (-20) 2\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 65\O
-ML/lmm/m/it/10 ; \OMS/lmsy/m/n/10 ^^@\OT1/lmr/m/n/10 (-20) 1\OML/lmm/m/it/10 :\
-OT1/lmr/m/n/10 (-20) 11\OMS/lmsy/m/n/10 g$
- []
-
-[7{/usr/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc} <.
-/figures/fig3_pinn_comparison.pdf>]
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 331.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\sigma' on input line 331.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 331.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 331.
-
-
-Overfull \hbox (12.811pt too wide) in paragraph at lines 332--333
+Overfull \hbox (12.811pt too wide) in paragraph at lines 383--384
 \T1/lmr/m/n/10 (-20) cov-ery; me-dian IV achieves $\OMS/lmsy/m/n/10 f\OT1/lmr/m
 /n/10 (-20) 0\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 7%\OML/lmm/m/it/10 ; \OT1/
 lmr/m/n/10 (-20) 4\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 5%\OML/lmm/m/it/10 ; 
@@ -744,52 +710,51 @@ ML/lmm/m/it/10 ; \OT1/lmr/m/n/10 (-20) 6\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20)
  (-20) 3%\OMS/lmsy/m/n/10 g$\T1/lmr/m/n/10 (-20) .
  []
 
-[8] [9 <./figures/local_vol_direct_vs_market_iv_SPY.pdf>] [10] (./main_v2.aux)
+[9] [10] [11 <./figures/pipeline_diagram.pdf>] (./main_v2.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `main_v2.out' has not changed.
-(rerunfilecheck)             Checksum: 75A652D6443E37F6CDE37994ADDFC844;4020.
+(rerunfilecheck)             Checksum: 3821765A6414D9D2F77815F5E89A87DA;3905.
  ) 
 Here is how much of TeX's memory you used:
- 13879 strings out of 469006
- 215159 string characters out of 5454813
- 678948 words of memory out of 5000000
- 42042 multiletter control sequences out of 15000+600000
- 742494 words of font info for 233 fonts, out of 8000000 for 9000
+ 13875 strings out of 469006
+ 214559 string characters out of 5454813
+ 680853 words of memory out of 5000000
+ 42030 multiletter control sequences out of 15000+600000
+ 742897 words of font info for 237 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
- 75i,13n,79p,1304b,642s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,13n,79p,1260b,574s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></u
 sr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/lo
 cal/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx8.pfb></usr/local/te
 xlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx9.pfb></usr/local/texlive/
-2026basic/texmf-dist/fonts/type1/public/lm/lmex10.pfb></usr/local/texlive/2026b
-asic/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/local/texlive/2026basic/
-texmf-dist/fonts/type1/public/lm/lmmi12.pfb></usr/local/texlive/2026basic/texmf
--dist/fonts/type1/public/lm/lmmi5.pfb></usr/local/texlive/2026basic/texmf-dist/
-fonts/type1/public/lm/lmmi6.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/
-type1/public/lm/lmmi7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/
-public/lm/lmmi8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public
-/lm/lmmi9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lm
-r10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr12.pf
-b></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr5.pfb></usr
-/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/local/
-texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr7.pfb></usr/local/texlive
-/2026basic/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/local/texlive/2026ba
-sic/texmf-dist/fonts/type1/public/lm/lmr9.pfb></usr/local/texlive/2026basic/tex
-mf-dist/fonts/type1/public/lm/lmri10.pfb></usr/local/texlive/2026basic/texmf-di
-st/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2026basic/texmf-dist/fo
-nts/type1/public/lm/lmsy6.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/ty
-pe1/public/lm/lmsy7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/pu
-blic/lm/lmsy8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/l
-m/lmsy9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt
-10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt12.pf
-b>
-Output written on main_v2.pdf (10 pages, 624547 bytes).
+2026basic/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/local/texlive/2026b
+asic/texmf-dist/fonts/type1/public/lm/lmmi12.pfb></usr/local/texlive/2026basic/
+texmf-dist/fonts/type1/public/lm/lmmi5.pfb></usr/local/texlive/2026basic/texmf-
+dist/fonts/type1/public/lm/lmmi6.pfb></usr/local/texlive/2026basic/texmf-dist/f
+onts/type1/public/lm/lmmi7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/t
+ype1/public/lm/lmmi8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/p
+ublic/lm/lmmi9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/
+lm/lmr10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr
+12.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr5.pfb>
+</usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/l
+ocal/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr7.pfb></usr/local/te
+xlive/2026basic/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/local/texlive/2
+026basic/texmf-dist/fonts/type1/public/lm/lmr9.pfb></usr/local/texlive/2026basi
+c/texmf-dist/fonts/type1/public/lm/lmri10.pfb></usr/local/texlive/2026basic/tex
+mf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/local/texlive/2026basic/texmf-di
+st/fonts/type1/public/lm/lmsy6.pfb></usr/local/texlive/2026basic/texmf-dist/fon
+ts/type1/public/lm/lmsy7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/typ
+e1/public/lm/lmsy8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/pub
+lic/lm/lmsy9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm
+/lmtt10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt
+12.pfb>
+Output written on main_v2.pdf (11 pages, 554534 bytes).
 PDF statistics:
- 718 PDF objects out of 1000 (max. 8388607)
- 399 compressed objects within 4 object streams
- 77 named destinations out of 1000 (max. 500000)
- 64709 words of extra memory for PDF output out of 74296 (max. 10000000)
+ 590 PDF objects out of 1000 (max. 8388607)
+ 365 compressed objects within 4 object streams
+ 78 named destinations out of 1000 (max. 500000)
+ 64712 words of extra memory for PDF output out of 74296 (max. 10000000)
 

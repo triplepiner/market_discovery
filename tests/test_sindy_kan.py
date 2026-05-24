@@ -186,3 +186,140 @@ def test_out_of_sample_runs():
     # OoS R^2 must at least be a float (NaN allowed if branch couldn't run).
     assert 'kan_oos_r2' in res
     assert isinstance(res['kan_oos_r2'], float)
+
+
+# ---------------------------------------------------------------------------
+# 8. Multi-seed sweep: 3 seeds complete on a small synthetic Dupire grid
+# ---------------------------------------------------------------------------
+
+
+def test_multi_seed_runs():
+    """3 seeds complete training on a 20x20 synthetic Dupire grid."""
+    from src.sindy_kan import (
+        generate_synthetic_dupire_constsig,
+        train_kan_dupire_21,
+        extract_activations,
+    )
+    data = generate_synthetic_dupire_constsig(n_k=20, n_tau=20, sigma=0.20)
+    for seed in (42, 43, 44):
+        res = train_kan_dupire_21(
+            data['dCdk'], data['d2Cdk2'], data['theta'],
+            n_epochs=400, lr=5e-3, seed=seed)
+        assert np.isfinite(res['train_r2']), \
+            f"seed {seed}: train_r2 not finite"
+        x0, y0, x1, y1 = extract_activations(res['model'], n_points=64)
+        assert x0.shape == y0.shape == x1.shape == y1.shape == (64,)
+
+
+# ---------------------------------------------------------------------------
+# 9. Activation shape stays close to linear on constant-sigma BS surface
+# ---------------------------------------------------------------------------
+
+
+def test_activation_shape_consistent():
+    """Constant-sigma surface: all seeds produce near-linear activations."""
+    from src.sindy_kan import (
+        generate_synthetic_dupire_constsig,
+        train_kan_dupire_21,
+        extract_activations,
+        _activation_linear_r2,
+    )
+    data = generate_synthetic_dupire_constsig(n_k=25, n_tau=12, sigma=0.20)
+    for seed in (42, 43, 44):
+        res = train_kan_dupire_21(
+            data['dCdk'], data['d2Cdk2'], data['theta'],
+            n_epochs=2500, lr=5e-3, lambda_l1=1e-3,
+            lambda_complexity=1e-2, seed=seed)
+        x0, y0, x1, y1 = extract_activations(res['model'], n_points=120)
+        r2_drift = _activation_linear_r2(x0, y0)
+        r2_diff = _activation_linear_r2(x1, y1)
+        assert r2_drift > 0.85, (
+            f"seed {seed} drift edge not linear: R^2={r2_drift:.3f}")
+        assert r2_diff > 0.85, (
+            f"seed {seed} diffusion edge not linear: R^2={r2_diff:.3f}")
+
+
+# ---------------------------------------------------------------------------
+# 10. Confidence-band dict contains aligned mean/lower/upper arrays
+# ---------------------------------------------------------------------------
+
+
+def test_confidence_band_computed():
+    """``_summarize_curves`` returns aligned mean/lower/upper arrays."""
+    from src.sindy_kan import _summarize_curves
+    rng = np.random.default_rng(0)
+    curves = rng.normal(size=(5, 200))
+    summary = _summarize_curves(curves)
+    for key in ('mean', 'lower', 'upper'):
+        assert key in summary, f"missing key {key}"
+        assert summary[key].shape == (200,), (
+            f"{key} shape {summary[key].shape} != (200,)")
+    # Ordering: lower <= mean <= upper element-wise (within tolerance).
+    assert np.all(summary['lower'] <= summary['mean'] + 1e-9)
+    assert np.all(summary['mean'] <= summary['upper'] + 1e-9)
+
+
+# ---------------------------------------------------------------------------
+# 11. Cross-ticker transfer (SPY -> QQQ) on cached real_chain CSVs
+# ---------------------------------------------------------------------------
+
+
+def test_ticker_transfer_runs():
+    """``ticker_transfer`` returns a finite R^2 on real cached SPY/QQQ data."""
+    import os
+    from src.transfer_experiments import ticker_transfer
+
+    # Skip cleanly if cached CSVs aren't present in this environment.
+    cache = os.path.join('outputs', 'tables')
+    if not (os.path.isfile(os.path.join(cache, 'real_chain_SPY_20260329.csv'))
+            and os.path.isfile(os.path.join(cache,
+                                              'real_chain_QQQ_20260329.csv'))):
+        pytest.skip("cached real_chain CSVs not present in this environment")
+
+    row = ticker_transfer('SPY', 'QQQ', train_date='20260329',
+                            test_date='20260329',
+                            n_epochs=300, seed=42)
+    assert row['train_ticker'] == 'SPY'
+    assert row['test_ticker'] == 'QQQ'
+    assert isinstance(row['R2_test'], float)
+    assert np.isfinite(row['R2_test']), (
+        f"R2_test must be finite, got {row['R2_test']}")
+    assert row['n_train'] > 0 and row['n_test'] > 0
+
+
+# ---------------------------------------------------------------------------
+# 12. Leave-one-expiration-out on a tiny 4-expiration synthetic dataset
+# ---------------------------------------------------------------------------
+
+
+def test_per_expiration_loo_runs():
+    """LOO over 4 synthetic expirations returns one R^2 entry per expiration."""
+    from src.sindy_kan import generate_synthetic_dupire_smile
+    from src.transfer_experiments import (
+        _train_on_mask, _predict_kan, _r2,
+    )
+    # 4 expirations x 12 strikes -- small surface as called for in the PRD.
+    data = generate_synthetic_dupire_smile(
+        n_k=12, n_tau=4, sigma_atm=0.20, smile_curvature=0.30,
+        tau_range=(0.1, 1.0))
+    dCdk = data['dCdk']; d2Cdk2 = data['d2Cdk2']; theta = data['theta']
+    n_k, n_tau = dCdk.shape
+    assert n_tau == 4
+
+    rows = []
+    for j in range(n_tau):
+        mask_train = np.ones((n_k, n_tau), dtype=bool); mask_train[:, j] = False
+        mask_test = ~mask_train
+        res = _train_on_mask(dCdk, d2Cdk2, theta, mask_train,
+                              n_epochs=300, seed=42)
+        a_te = dCdk[mask_test].ravel(); b_te = d2Cdk2[mask_test].ravel()
+        t_te = theta[mask_test].ravel()
+        ok = np.isfinite(a_te) & np.isfinite(b_te) & np.isfinite(t_te)
+        pred = _predict_kan(res, a_te[ok], b_te[ok])
+        rows.append({'tau_left_out': float(data['tau'][j]),
+                      'R2': float(_r2(t_te[ok], pred)),
+                      'n_test_points': int(ok.sum())})
+    df = pd.DataFrame(rows)
+    assert len(df) == 4
+    assert 'R2' in df.columns and 'tau_left_out' in df.columns
+    assert np.all(np.isfinite(df['R2'].values))
