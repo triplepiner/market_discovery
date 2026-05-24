@@ -1,0 +1,6 @@
+strategy,noise_low,noise_high
+fd,0.0,0.005
+savgol,0.005,0.005
+gp,0.005,0.15
+weak,0.15,0.5
+unreliable,0.5,inf

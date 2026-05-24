@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel, Matern
 
 from src.utils import set_all_seeds, setup_logging, safe_relative_error
 from src.data_generation import generate_price_surface, add_noise
@@ -32,12 +32,15 @@ from src.sindy_discovery import (
 logger = setup_logging(__name__)
 
 
-def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42):
+def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42,
+                   kernel='rbf', return_info=False):
     """
     Fit a GaussianProcessRegressor (RBF + WhiteKernel) to a noisy price surface.
 
     Random-subsamples ``n_subsample`` points from the full (S, t) grid to
-    keep the O(N^3) GP fit tractable.
+    keep the O(N^3) GP fit tractable.  When the full grid is small enough that
+    the requested ``n_subsample`` would cover most of it, the subsample is
+    automatically reduced to ``min(n_subsample, int(total_points * 0.7))``.
 
     Parameters
     ----------
@@ -45,15 +48,24 @@ def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42):
     S_grid : ndarray, shape (n_S,)
     t_grid : ndarray, shape (n_t,)
     n_subsample : int
-        Number of grid points to subsample for the GP fit.
+        Requested number of grid points to subsample for the GP fit.  May be
+        auto-reduced on sparse surfaces.
     seed : int
+    kernel : {'rbf', 'matern'}, default 'rbf'
+        Choice of covariance.  ``'matern'`` uses Matern(nu=2.5), which is
+        twice-differentiable (still admits the analytical derivatives we
+        compute) but produces less smooth realisations than RBF and is
+        therefore preferred for noisy real-data surfaces.
+    return_info : bool, default False
+        Backwards-compatible flag.  When False, the function returns the
+        legacy ``(gp, subsample_idx)`` tuple.  When True, returns a dict with
+        ``gp``, ``subsample_idx``, ``length_scales``, ``noise_level``,
+        ``constant_value``, ``kernel_used``.
 
     Returns
     -------
-    gp : GaussianProcessRegressor
-        Fitted model with attributes alpha_, X_train_, kernel_.
-    subsample_idx : ndarray
-        Linear indices into the flattened (n_S * n_t) grid.
+    gp, subsample_idx : when ``return_info=False`` (default)
+    info : dict, when ``return_info=True``
     """
     set_all_seeds(seed)
 
@@ -64,6 +76,17 @@ def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42):
     y_full = V_noisy.ravel()
 
     n_total = X_full.shape[0]
+
+    # Auto-reduce subsample when the grid is too small to leave headroom.
+    total_points = V_noisy.size
+    auto_subsample = min(n_subsample, int(total_points * 0.7))
+    if auto_subsample < n_subsample:
+        logger.info(
+            f"Auto-reduced subsample from {n_subsample} to {auto_subsample} "
+            f"(total grid points = {total_points})"
+        )
+    n_subsample = max(auto_subsample, 1)
+
     rng = np.random.RandomState(seed)
     n_use = min(n_subsample, n_total)
     subsample_idx = rng.choice(n_total, size=n_use, replace=False)
@@ -80,17 +103,34 @@ def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42):
     y_var = float(np.var(y_train))
     noise_init = max(1e-4, 0.01 * y_var)
 
-    kernel = (
-        ConstantKernel(constant_value=max(y_var, 1e-3),
-                       constant_value_bounds=(1e-5, 1e8))
-        * RBF(length_scale=length_scale_init,
-              length_scale_bounds=(1e-2, 1e4))
-        + WhiteKernel(noise_level=noise_init,
-                      noise_level_bounds=(1e-10, 1e2))
-    )
+    kernel_used = str(kernel).lower()
+    if kernel_used == 'matern':
+        # Matern with nu=2.5 is twice-differentiable analytically -- still
+        # admits dV/dS and d2V/dS2 in closed form but with shorter effective
+        # correlation length than RBF, which is what we want on rough real
+        # market surfaces.
+        k_obj = (
+            ConstantKernel(constant_value=max(y_var, 1e-3),
+                           constant_value_bounds=(1e-5, 1e8))
+            * Matern(length_scale=length_scale_init,
+                     nu=2.5,
+                     length_scale_bounds=(1e-2, 1e4))
+            + WhiteKernel(noise_level=noise_init,
+                          noise_level_bounds=(1e-10, 1e2))
+        )
+    else:
+        kernel_used = 'rbf'
+        k_obj = (
+            ConstantKernel(constant_value=max(y_var, 1e-3),
+                           constant_value_bounds=(1e-5, 1e8))
+            * RBF(length_scale=length_scale_init,
+                  length_scale_bounds=(1e-2, 1e4))
+            + WhiteKernel(noise_level=noise_init,
+                          noise_level_bounds=(1e-10, 1e2))
+        )
 
     gp = GaussianProcessRegressor(
-        kernel=kernel,
+        kernel=k_obj,
         n_restarts_optimizer=2,
         normalize_y=True,
         random_state=seed,
@@ -102,10 +142,40 @@ def fit_gp_surface(V_noisy, S_grid, t_grid, n_subsample=500, seed=42):
         gp.fit(X_train, y_train)
 
     logger.info(
-        f"GP fit complete: n_train={n_use}, learned kernel={gp.kernel_}, "
+        f"GP fit complete ({kernel_used}): n_train={n_use}, "
+        f"learned kernel={gp.kernel_}, "
         f"log-marginal-likelihood={gp.log_marginal_likelihood_value_:.2f}"
     )
 
+    # Pull learned hyperparameters for return-info / kernel comparison.
+    try:
+        product = gp.kernel_.k1
+        white = gp.kernel_.k2
+        constant = product.k1
+        inner = product.k2
+        ls = np.atleast_1d(np.asarray(inner.length_scale, dtype=float))
+        if ls.size == 1:
+            ls = np.repeat(ls, 2)
+        learned = {
+            'length_scales': ls,
+            'noise_level': float(white.noise_level),
+            'constant_value': float(constant.constant_value),
+            'kernel_used': kernel_used,
+        }
+    except Exception:
+        learned = {
+            'length_scales': np.array([np.nan, np.nan]),
+            'noise_level': float('nan'),
+            'constant_value': float('nan'),
+            'kernel_used': kernel_used,
+        }
+
+    if return_info:
+        return {
+            'gp': gp,
+            'subsample_idx': subsample_idx,
+            **learned,
+        }
     return gp, subsample_idx
 
 
@@ -147,6 +217,48 @@ def _unpack_rbf_kernel(gp):
     return sigma_f2, length_scales, noise_level, y_train_mean, y_train_std
 
 
+def _is_rbf_inner(gp):
+    """True if the fitted GP's inner kernel is an RBF (vs Matern, etc.)."""
+    try:
+        inner = gp.kernel_.k1.k2
+        return isinstance(inner, RBF)
+    except Exception:
+        return False
+
+
+def _compute_gp_derivatives_numerical(gp, S_grid, t_grid):
+    """Fallback: predict GP on full grid, take centered finite differences.
+
+    Used for non-RBF kernels (e.g. Matern) where the closed-form RBF
+    derivative formulas in :func:`compute_gp_derivatives` do not apply.
+    """
+    n_S = len(S_grid)
+    n_t = len(t_grid)
+    S_mesh, t_mesh = np.meshgrid(S_grid, t_grid, indexing='ij')
+    X_pred = np.column_stack([S_mesh.ravel(), t_mesh.ravel()])
+    V_smooth = gp.predict(X_pred).reshape(n_S, n_t)
+
+    # Centered finite differences (interior); one-sided at edges.
+    dS = float(S_grid[1] - S_grid[0])
+    dt = float(t_grid[1] - t_grid[0])
+
+    dV_dS = np.gradient(V_smooth, dS, axis=0)
+    dV_dt = np.gradient(V_smooth, dt, axis=1)
+
+    d2V_dS2 = np.zeros_like(V_smooth)
+    d2V_dS2[1:-1, :] = (V_smooth[2:, :] - 2.0 * V_smooth[1:-1, :]
+                        + V_smooth[:-2, :]) / (dS ** 2)
+    d2V_dS2[0, :] = d2V_dS2[1, :]
+    d2V_dS2[-1, :] = d2V_dS2[-2, :]
+
+    return {
+        'V_smooth': V_smooth,
+        'dV_dt': dV_dt,
+        'dV_dS': dV_dS,
+        'd2V_dS2': d2V_dS2,
+    }
+
+
 def compute_gp_derivatives(gp, S_grid, t_grid):
     """
     Compute analytical derivatives of the GP posterior mean on the full grid.
@@ -158,6 +270,9 @@ def compute_gp_derivatives(gp, S_grid, t_grid):
     The posterior mean is mu(x*) = k(x*, X_train) @ alpha. Its derivatives
     are obtained by differentiating k under the sum (alpha is independent of x*).
 
+    For non-RBF kernels (e.g. Matern), falls back to numerical derivatives
+    of ``gp.predict`` on the dense grid.
+
     Vectorised: no Python loop over prediction points.
 
     Returns
@@ -165,6 +280,9 @@ def compute_gp_derivatives(gp, S_grid, t_grid):
     dict with keys:
         'V_smooth', 'dV_dt', 'dV_dS', 'd2V_dS2' all shape (n_S, n_t)
     """
+    if not _is_rbf_inner(gp):
+        return _compute_gp_derivatives_numerical(gp, S_grid, t_grid)
+
     sigma_f2, length_scales, _, y_mean, y_std = _unpack_rbf_kernel(gp)
     L_S, L_t = float(length_scales[0]), float(length_scales[1])
 
@@ -366,3 +484,130 @@ def run_gp_noise_robustness(noise_levels=None, n_S=50, n_t=50, K=100,
     df = pd.DataFrame(rows)
     logger.info(f"GP noise robustness sweep:\n{df.to_string(index=False)}")
     return df
+
+
+# ---------------------------------------------------------------------------
+# Fix #3 -- Constrained-length-scale GP for derivative-preserving fits.
+# ---------------------------------------------------------------------------
+
+def fit_gp_surface_constrained(V, S_grid, t_grid, n_subsample=500, seed=42,
+                                ls_bounds_S=None, ls_bounds_t=None,
+                                ls_init_S=None, ls_init_t=None,
+                                stratified=False, kernel='rbf',
+                                n_restarts_optimizer=2):
+    """
+    Fit a GP with constrained per-axis length scales.
+
+    Designed for derivative-preservation use cases such as GP-Dupire where
+    over-large length scales on the K (strike) axis collapse the second
+    derivative.  Lets callers pin or bound the length scale on either axis
+    and optionally use stratified sampling so every level of the S/K axis
+    is represented in the training set.
+
+    Parameters
+    ----------
+    V : ndarray, shape (n_S, n_t)
+    S_grid, t_grid : 1-D ndarrays
+    n_subsample : int
+    seed : int
+    ls_bounds_S, ls_bounds_t : tuple (low, high) or None
+        Bounds on length scale along each axis.  If None, falls back to the
+        default ``(1e-2, 1e4)``.
+    ls_init_S, ls_init_t : float or None
+        Initial length-scale guesses.  If None, defaults to 20% of the
+        respective grid extent.
+    stratified : bool, default False
+        If True, perform stratified sampling: take roughly
+        ``n_subsample / n_S`` points from each S level (with at least one
+        sample per S level so curvature along S is well constrained).
+    kernel : {'rbf', 'matern'}, default 'rbf'
+    n_restarts_optimizer : int, default 2
+
+    Returns
+    -------
+    gp, subsample_idx
+    """
+    set_all_seeds(seed)
+
+    n_S, n_t = V.shape
+    S_mesh, t_mesh = np.meshgrid(S_grid, t_grid, indexing='ij')
+
+    X_full = np.column_stack([S_mesh.ravel(), t_mesh.ravel()])
+    y_full = V.ravel()
+    n_total = X_full.shape[0]
+
+    total_points = V.size
+    auto_subsample = min(n_subsample, int(total_points * 0.7))
+    n_subsample = max(auto_subsample, 1)
+
+    rng = np.random.RandomState(seed)
+
+    if stratified:
+        per_level = max(int(np.ceil(n_subsample / n_S)), 1)
+        idx_list = []
+        for i in range(n_S):
+            base = i * n_t
+            n_take = min(per_level, n_t)
+            cols = rng.choice(n_t, size=n_take, replace=False)
+            idx_list.append(base + cols)
+        subsample_idx = np.concatenate(idx_list)
+        if subsample_idx.size > n_subsample:
+            keep = rng.choice(subsample_idx.size, size=n_subsample,
+                              replace=False)
+            subsample_idx = subsample_idx[keep]
+    else:
+        n_use = min(n_subsample, n_total)
+        subsample_idx = rng.choice(n_total, size=n_use, replace=False)
+
+    X_train = X_full[subsample_idx]
+    y_train = y_full[subsample_idx]
+
+    S_extent = float(S_grid[-1] - S_grid[0])
+    t_extent = float(t_grid[-1] - t_grid[0])
+
+    ls_S = float(ls_init_S) if ls_init_S is not None else 0.2 * S_extent
+    ls_t = float(ls_init_t) if ls_init_t is not None else 0.2 * t_extent
+    bounds_S = tuple(ls_bounds_S) if ls_bounds_S is not None else (1e-2, 1e4)
+    bounds_t = tuple(ls_bounds_t) if ls_bounds_t is not None else (1e-2, 1e4)
+
+    # Clip the init into its own bounds so sklearn doesn't reject it.
+    ls_S = float(np.clip(ls_S, bounds_S[0] * 1.001, bounds_S[1] * 0.999))
+    ls_t = float(np.clip(ls_t, bounds_t[0] * 1.001, bounds_t[1] * 0.999))
+
+    y_var = float(np.var(y_train))
+    noise_init = max(1e-4, 0.01 * y_var)
+
+    if str(kernel).lower() == 'matern':
+        inner = Matern(length_scale=[ls_S, ls_t], nu=2.5,
+                       length_scale_bounds=[bounds_S, bounds_t])
+    else:
+        inner = RBF(length_scale=[ls_S, ls_t],
+                    length_scale_bounds=[bounds_S, bounds_t])
+
+    k_obj = (
+        ConstantKernel(constant_value=max(y_var, 1e-3),
+                       constant_value_bounds=(1e-5, 1e8))
+        * inner
+        + WhiteKernel(noise_level=noise_init,
+                      noise_level_bounds=(1e-10, 1e2))
+    )
+
+    gp = GaussianProcessRegressor(
+        kernel=k_obj,
+        n_restarts_optimizer=int(n_restarts_optimizer),
+        normalize_y=True,
+        random_state=seed,
+        alpha=0.0,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gp.fit(X_train, y_train)
+
+    logger.info(
+        f"Constrained GP fit: n_train={len(subsample_idx)}, "
+        f"bounds_S={bounds_S}, bounds_t={bounds_t}, stratified={stratified}, "
+        f"learned kernel={gp.kernel_}"
+    )
+
+    return gp, subsample_idx

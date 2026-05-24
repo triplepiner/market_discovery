@@ -1,0 +1,84 @@
+{
+  "section_3_1_noise_comparison": {
+    "source": "outputs/tables/all_methods_noise_comparison_v2.csv + gp_noise_robustness.csv + spectral_noise_robustness.csv + final_summary.txt sec 11",
+    "r2_clean_by_method": {
+      "0.0%": {"fd": 1.000, "savgol": 1.000, "neural": 0.867, "weak": 0.901, "gp": 1.000, "spectral": 0.941},
+      "1.0%": {"fd": 0.816, "savgol": 0.958, "neural": 0.857, "weak": 0.898, "gp": 0.990, "spectral": 0.818},
+      "5.0%": {"fd": 0.405, "savgol": 0.846, "neural": 0.557, "weak": 0.885, "gp": 0.951, "spectral": 0.181},
+      "10.0%": {"fd": -0.486, "savgol": 0.816, "neural": 0.119, "weak": 0.888, "gp": 0.920, "spectral": -0.477},
+      "20.0%": {"fd": -1.298, "savgol": 0.650, "neural": -0.434, "weak": 0.832, "gp": -0.286, "spectral": -0.954},
+      "30.0%": {"fd": -1.797, "savgol": 0.345, "neural": -1.067, "weak": 0.572, "gp": -0.974, "spectral": -1.269}
+    },
+    "key_finding_text": "GP dominates from ~1% through 10% noise; weak-form takes over at 15%+."
+  },
+  "section_3_2_pinn": {
+    "source": "outputs/tables/pinn_results_call.csv, pinn_results_put.csv, hard_constraint_pinn.csv, logprice_pinn.csv",
+    "original_call":  {"rel_L2": 0.010074, "r2": 0.999825},
+    "original_put":   {"rel_L2": 0.480430, "r2": 0.598844},
+    "hard_call":      {"rel_L2": 0.030837, "r2": 0.998505, "boundary_err": 0.0},
+    "hard_put":       {"rel_L2": 0.049841, "r2": 0.995915, "boundary_err": 0.0},
+    "logprice_call":  {"rel_L2": 0.004752, "r2": 0.999965, "boundary_err": 0.356344},
+    "logprice_put":   {"rel_L2": 0.036871, "r2": 0.997764, "boundary_err": 0.421785}
+  },
+  "section_3_3_misspecification": {
+    "source": "outputs/tables/merton_discovery.csv + heston_variance_slicing.csv",
+    "merton": {
+      "V":          {"bs_true":  0.05,  "discovered":  0.053119},
+      "dV/dS":      {"bs_true":  0.0,   "discovered": -0.067285},
+      "d2V/dS2":    {"bs_true":  0.0,   "discovered":  1.904900},
+      "S*dV/dS":    {"bs_true": -0.05,  "discovered": -0.050551},
+      "S2*d2V/dS2": {"bs_true": -0.020, "discovered": -0.020585}
+    },
+    "heston_diffusion_slope_text": "true slope -0.5 vs discovered ≈ -0.5001 (regress disc coef on sigma^2 from heston_variance_slicing.csv)"
+  },
+  "section_3_4_real": {
+    "source": "real_data_summary.csv + gp_on_real_data.csv + iv_regime_SPY/QQQ.csv + term_contributions_real.csv + dupire_real_comparison.csv + gp_dupire_real_comparison.csv",
+    "data_date": "2026-05-23 and 2026-03-29 chains; user request date 2026-05-23",
+    "n_contracts_total": 1374,
+    "n_per_ticker": {"SPY": 542, "QQQ": 416, "AAPL": 244, "MSFT": 172},
+    "raw_chains_rows_pre_filter": 3010,
+    "gp_sindy_r2": {"SPY": 0.9657, "QQQ": 0.9305, "AAPL": 0.9233, "MSFT": 0.5318},
+    "gp_sigma_disc": {"SPY": 0.2456, "QQQ": 0.2798, "AAPL": 0.2369, "MSFT": 0.3830},
+    "spy_contributions_fraction_of_total": {"V": 0.0532, "dV/dS": 0.4692, "d2V/dS2": 0.0019, "S*dV/dS": 0.4757, "S2*d2V/dS2": 0.0},
+    "spy_iv_regime": {
+      "Short": 0.158, "Medium": 0.177, "Long": 0.198,
+      "OTM_put": 0.294, "ATM": 0.157, "OTM_call": 0.158
+    },
+    "qqq_iv_regime": {
+      "Short": 0.220, "Medium": 0.224, "Long": 0.270,
+      "OTM_put": 0.335, "ATM": 0.226, "OTM_call": 0.214
+    },
+    "dupire_synthetic_sanity": {"r2": 0.9990, "sigma_disc": 0.1999, "drift": 0.0522},
+    "dupire_real_r2_fd":  {"SPY": 0.7379, "QQQ": 0.2496, "AAPL": 0.1421, "MSFT": -0.2575},
+    "dupire_real_r2_gp":  {"SPY": 0.5797, "QQQ": -2.8102, "AAPL": 0.6487, "MSFT": 0.7045}
+  },
+  "section_appendix_misc": {
+    "source": "ensemble_sindy.csv, elastic_net.csv, pca_sindy.csv, standardization_comparison.csv",
+    "ensemble_inclusion": {"V": 0.00, "dV/dS": 0.00, "d2V/dS2": 1.00, "S*dV/dS": 0.00, "S2*d2V/dS2": 0.00},
+    "elastic_net_coeffs": {"V": 0.0485, "S*dV/dS": -0.0496, "S2*d2V/dS2": -0.0201, "r2": 0.99999, "n_active": 3, "alpha": 0.0139, "l1_ratio": 0.9},
+    "pca_sindy": {"r2": 0.99999, "n_active": 5},
+    "cond_synthetic_raw": 67828.87, "cond_synthetic_std": 90.96,
+    "cond_spy_raw": 3366380.28, "cond_spy_std": 61.78
+  },
+  "section_appendix_runtime": {
+    "source": "outputs/tables/computation_costs.csv",
+    "full_pipeline_s": 1753.35,
+    "pinn_training_total_s": 473.18,
+    "pinn_call_s": 332.96, "pinn_put_s": 473.20,
+    "hc_pinn_call_s": 142.04, "hc_pinn_put_s": 141.30,
+    "logprice_pinn_call_s": 135.85, "logprice_pinn_put_s": 134.50,
+    "neural_arch_sweep_s": 77.21,
+    "gp_noise_sweep_s": 11.30,
+    "derivative_method_comparison_s": 9.88,
+    "ensemble_sindy_s": 0.0315,
+    "pca_sindy_s": 0.0174,
+    "elastic_net_s": 0.0833
+  },
+  "discovered_pde_clean": {
+    "source": "final_summary.txt line 6 / standardization_comparison.csv",
+    "expr": "dV/dt = 0.049897 V + 0.038175 dV/dS + 0.555272 d2V/dS2 - 0.050237 S dV/dS - 0.020097 S^2 d2V/dS2",
+    "r2_noisy": 0.999998,
+    "cond": 6.78e4,
+    "note": "5-term identification on raw library (multicollinear); after standardization cond drops to 90.96."
+  }
+}

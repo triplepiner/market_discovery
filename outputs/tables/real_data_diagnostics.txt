@@ -1,0 +1,8 @@
+--- SPY ---
+  cond=2.998e+06, shape=(40, 23), corr_offdiag_max=0.9934
+--- QQQ ---
+  cond=4.348e+06, shape=(40, 20), corr_offdiag_max=0.9943
+--- AAPL ---
+  cond=5.185e+05, shape=(40, 18), corr_offdiag_max=0.9899
+--- MSFT ---
+  cond=1.340e+06, shape=(40, 15), corr_offdiag_max=0.9911

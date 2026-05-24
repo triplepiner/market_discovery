@@ -13,7 +13,85 @@ import warnings
 import logging
 
 from src.utils import setup_logging
-from src.sindy_discovery import TERM_NAMES
+from src.sindy_discovery import (
+    TERM_NAMES, compute_derivatives, build_candidate_library,
+)
+
+
+# ===================================================================
+# Term contribution analysis
+# ===================================================================
+
+def compute_term_contributions(sindy_result, V, S_grid, t_grid, trim=2,
+                               smooth=False):
+    """
+    Compute the mean absolute physical contribution of each library term.
+
+    For each term j: ``contribution_j = mean(|coefficient_j * library_column_j|)``.
+    Also computes the fractional contribution to the total predicted dV/dt
+    (where total = sum of |coefficient_j * column_j|).
+
+    This is the key interpretability metric for SINDy on real data: raw
+    coefficients can be misleading when columns have wildly different
+    magnitudes (e.g. ``dV/dS ~ 0.03`` vs ``S^2*d2V/dS^2 ~ 355``). The
+    physical contribution is what the term actually adds to the PDE.
+
+    Parameters
+    ----------
+    sindy_result : dict
+        Output from ``discover_pde``. Must contain
+        ``'discovered_coefficients'``.
+    V : ndarray, shape (n_S, n_t)
+        Price surface (same one fed to discover_pde).
+    S_grid, t_grid : ndarray
+        Same grids fed to discover_pde.
+    trim : int
+        Boundary trim — must match the trim used in the SINDy run, otherwise
+        the recomputed library columns won't match.
+    smooth : bool
+        Whether the original run used Savitzky-Golay smoothing.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``term``, ``coefficient``, ``mean_abs_column``,
+        ``mean_abs_contribution``, ``fraction_of_total``.
+        Rows ordered by ``TERM_NAMES``. ``fraction_of_total`` sums to ~1.0.
+    """
+    coeffs = np.asarray(sindy_result['discovered_coefficients'], dtype=float)
+
+    # Recompute library on the same grid / trim
+    derivs = compute_derivatives(V, S_grid, t_grid, smooth=smooth, trim=trim)
+    library = build_candidate_library(
+        derivs['V'], derivs['dVdS'], derivs['d2VdS2'], derivs['S_mesh'],
+    )
+
+    n_terms = library.shape[1]
+    if len(coeffs) != n_terms:
+        raise ValueError(
+            f"Coefficient length ({len(coeffs)}) does not match library "
+            f"width ({n_terms})."
+        )
+
+    mean_abs_column = np.mean(np.abs(library), axis=0)
+    # Per-term physical contribution
+    contribs = library * coeffs[None, :]
+    mean_abs_contribution = np.mean(np.abs(contribs), axis=0)
+
+    total = float(np.sum(mean_abs_contribution))
+    if total < 1e-30:
+        fractions = np.zeros(n_terms)
+    else:
+        fractions = mean_abs_contribution / total
+
+    df = pd.DataFrame({
+        'term': list(TERM_NAMES),
+        'coefficient': coeffs.astype(float),
+        'mean_abs_column': mean_abs_column.astype(float),
+        'mean_abs_contribution': mean_abs_contribution.astype(float),
+        'fraction_of_total': fractions.astype(float),
+    })
+    return df
 
 logger = setup_logging(__name__)
 
@@ -24,6 +102,193 @@ _KNOWN_DIVIDEND_YIELDS = {
     'AAPL': 0.005,
     'MSFT': 0.007,
 }
+
+
+# ===================================================================
+# Real-data quality diagnostic (library scaling, conditioning)
+# ===================================================================
+
+def diagnose_real_data_quality(option_data, surface_data, ticker):
+    """
+    Print and return a comprehensive data-quality / scaling report for a
+    real-market option surface, designed to make library-scaling problems
+    immediately visible.
+
+    Parameters
+    ----------
+    option_data : dict
+        Output of :func:`fetch_option_data` (or compatible). Used for
+        ``S0``, ``r``, ``implied_vols``, ``ticker``.
+    surface_data : dict
+        Output of :func:`construct_smooth_surface`. Must contain
+        ``V_surface``, ``K_grid``, ``tau_grid``.
+    ticker : str
+
+    Returns
+    -------
+    dict
+        Diagnostic report with keys: ``ticker``, ``surface_shape``,
+        ``V_stats`` (min/max/mean/std), ``K_range``, ``K_spacing``,
+        ``tau_range``, ``tau_spacing``, ``derivative_stats`` (dict with
+        per-derivative min/max/mean/std + abs stats), ``bs_expected``
+        (rough theoretical magnitudes for the BS Greeks), ``library_col_max``
+        (max-abs per column), ``library_col_std``, ``condition_number``,
+        ``correlation_matrix``, ``corr_diag_max``, ``corr_offdiag_max``.
+    """
+    V = np.asarray(surface_data['V_surface'])
+    K_grid = np.asarray(surface_data['K_grid'])
+    tau_grid = np.asarray(surface_data['tau_grid'])
+    S0 = float(surface_data.get('S0', option_data.get('S0', np.nan)))
+    r = float(surface_data.get('r', option_data.get('r', 0.045)))
+
+    print("=" * 70)
+    print(f"DATA-QUALITY DIAGNOSTIC — {ticker}")
+    print("=" * 70)
+
+    # --- Surface shape ----------------------------------------------------
+    n_K, n_tau = V.shape
+    print(f"Surface shape (n_K, n_tau): ({n_K}, {n_tau})")
+
+    # --- V value statistics ----------------------------------------------
+    V_finite = V[np.isfinite(V)]
+    V_stats = {
+        'min': float(np.min(V_finite)) if V_finite.size else float('nan'),
+        'max': float(np.max(V_finite)) if V_finite.size else float('nan'),
+        'mean': float(np.mean(V_finite)) if V_finite.size else float('nan'),
+        'std': float(np.std(V_finite)) if V_finite.size else float('nan'),
+    }
+    print(f"V (option price) range:    "
+          f"min={V_stats['min']:.4g}, max={V_stats['max']:.4g}, "
+          f"mean={V_stats['mean']:.4g}, std={V_stats['std']:.4g}")
+
+    # --- K grid -----------------------------------------------------------
+    K_range = (float(K_grid.min()), float(K_grid.max()))
+    K_spacing = float(np.mean(np.diff(K_grid))) if len(K_grid) > 1 else float('nan')
+    print(f"K grid: range=[{K_range[0]:.4g}, {K_range[1]:.4g}], "
+          f"avg spacing dK={K_spacing:.4g}, S0={S0:.4g}")
+
+    # --- tau grid ---------------------------------------------------------
+    tau_range = (float(tau_grid.min()), float(tau_grid.max()))
+    tau_spacing = (
+        float(np.mean(np.diff(tau_grid))) if len(tau_grid) > 1 else float('nan')
+    )
+    print(f"tau grid: range=[{tau_range[0]:.4g}, {tau_range[1]:.4g}], "
+          f"avg spacing dtau={tau_spacing:.4g}")
+
+    # --- Numerical derivatives -------------------------------------------
+    # discover_pde uses calendar-time on axis-1; surface_data uses tau.
+    # We pass tau_grid directly to compute_derivatives because we only
+    # care about derivative magnitudes here, not signs.
+    derivs = compute_derivatives(
+        V, K_grid, tau_grid, smooth=False, trim=2,
+    )
+
+    def _stats(name, arr):
+        a = arr[np.isfinite(arr)]
+        if a.size == 0:
+            return {'min': float('nan'), 'max': float('nan'),
+                    'mean': float('nan'), 'std': float('nan'),
+                    'abs_max': float('nan'), 'abs_mean': float('nan')}
+        return {
+            'min': float(np.min(a)), 'max': float(np.max(a)),
+            'mean': float(np.mean(a)), 'std': float(np.std(a)),
+            'abs_max': float(np.max(np.abs(a))),
+            'abs_mean': float(np.mean(np.abs(a))),
+        }
+
+    deriv_stats = {
+        'dV/dt': _stats('dV/dt', derivs['dVdt']),
+        'dV/dK': _stats('dV/dK', derivs['dVdS']),
+        'd2V/dK2': _stats('d2V/dK2', derivs['d2VdS2']),
+    }
+    print("Derivative magnitudes (numerical):")
+    for name, s in deriv_stats.items():
+        print(f"  {name:<10} min={s['min']:+.3e}  max={s['max']:+.3e}  "
+              f"mean={s['mean']:+.3e}  std={s['std']:.3e}  "
+              f"abs_max={s['abs_max']:.3e}")
+
+    # --- BS-theory expected derivative magnitudes (rough) ----------------
+    # At the money: |Delta| ~ 0.5, |Gamma| ~ 1/(S0*sigma*sqrt(tau)).
+    # Theta ~ -S0*sigma/(2*sqrt(tau)) * phi(0).
+    avg_iv = float(np.nanmean(option_data.get('implied_vols', [0.20])))
+    if not np.isfinite(avg_iv) or avg_iv <= 0:
+        avg_iv = 0.20
+    tau_mid = float(np.median(tau_grid))
+    if tau_mid <= 0:
+        tau_mid = 0.25
+    sqrt_tau = np.sqrt(tau_mid)
+    expected_delta = 0.5
+    expected_gamma = 1.0 / (S0 * avg_iv * sqrt_tau) if S0 > 0 else float('nan')
+    expected_theta = -S0 * avg_iv / (2.0 * sqrt_tau) * 0.3989  # phi(0) ~ 0.3989
+    bs_expected = {
+        'avg_iv_used': avg_iv,
+        'tau_mid': tau_mid,
+        'expected_abs_dVdt_theta': float(abs(expected_theta)),
+        'expected_abs_dVdK_delta': float(expected_delta),
+        'expected_abs_d2VdK2_gamma': float(expected_gamma),
+    }
+    print(f"BS-theory expected magnitudes (S0={S0:.2f}, sigma={avg_iv:.3f}, "
+          f"tau~{tau_mid:.3f}):")
+    print(f"  |Theta| ~ {bs_expected['expected_abs_dVdt_theta']:.3e}   "
+          f"|Delta| ~ {bs_expected['expected_abs_dVdK_delta']:.3e}   "
+          f"|Gamma| ~ {bs_expected['expected_abs_d2VdK2_gamma']:.3e}")
+
+    # --- Library column magnitudes / condition ---------------------------
+    library = build_candidate_library(
+        derivs['V'], derivs['dVdS'], derivs['d2VdS2'], derivs['S_mesh'],
+    )
+    col_max = np.max(np.abs(library), axis=0)
+    col_std = np.std(library, axis=0)
+    cond = float(np.linalg.cond(library))
+
+    print("Library column |max| (raw, untandardized):")
+    for name, m, s in zip(TERM_NAMES, col_max, col_std):
+        print(f"  {name:<14} abs_max={m:.3e}   std={s:.3e}")
+    print(f"Library condition number: {cond:.3e}")
+    if cond > 1e10:
+        print("  >>> SEVERELY ILL-CONDITIONED. Standardization strongly recommended.")
+    elif cond > 1e8:
+        print("  >>> Poorly conditioned; consider standardization.")
+
+    # --- Pairwise correlations -------------------------------------------
+    corr = np.corrcoef(library.T)
+    # Diagonal is always 1; report max off-diagonal
+    p = corr.shape[0]
+    offdiag = []
+    for i in range(p):
+        for j in range(i + 1, p):
+            offdiag.append((TERM_NAMES[i], TERM_NAMES[j], float(corr[i, j])))
+    diag_max = float(np.max(np.abs(np.diag(corr))))
+    offdiag_abs = [abs(c) for _, _, c in offdiag]
+    offdiag_max = float(max(offdiag_abs)) if offdiag_abs else 0.0
+    print(f"Library correlation matrix ({p}x{p}):")
+    print(f"  diag max |corr| = {diag_max:.4f}   "
+          f"off-diag max |corr| = {offdiag_max:.4f}")
+    # Show top 3 most-correlated pairs
+    top_pairs = sorted(offdiag, key=lambda x: -abs(x[2]))[:3]
+    for a, b, c in top_pairs:
+        print(f"  corr({a}, {b}) = {c:+.4f}")
+    print("=" * 70)
+
+    report = {
+        'ticker': ticker,
+        'surface_shape': (int(n_K), int(n_tau)),
+        'V_stats': V_stats,
+        'K_range': K_range,
+        'K_spacing': K_spacing,
+        'tau_range': tau_range,
+        'tau_spacing': tau_spacing,
+        'derivative_stats': deriv_stats,
+        'bs_expected': bs_expected,
+        'library_col_max': {n: float(m) for n, m in zip(TERM_NAMES, col_max)},
+        'library_col_std': {n: float(s) for n, s in zip(TERM_NAMES, col_std)},
+        'condition_number': cond,
+        'correlation_matrix': corr,
+        'corr_diag_max': diag_max,
+        'corr_offdiag_max': offdiag_max,
+        'top_correlated_pairs': top_pairs,
+    }
+    return report
 
 
 # ===================================================================

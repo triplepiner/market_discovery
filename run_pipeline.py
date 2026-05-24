@@ -66,6 +66,16 @@ from src.sindy_discovery import (
 from src.baselines import elastic_net_regression, pysr_symbolic_regression
 from src.weak_sindy import weak_sindy_spectral_discover, adaptive_width_weak_sindy
 
+# ── Publication-readiness modules (PRD improvements #1-7) ─────────────────
+from src.real_data_publication import (
+    run_gp_sindy_on_real_data, compare_derivative_methods_on_real_data,
+    run_gp_dupire_on_real_data, compare_dupire_methods,
+    windowed_local_vol_extraction,
+)
+from src.real_data_analysis import diagnose_real_data_quality, compute_term_contributions
+from src.adaptive_denoiser import recalibrate_adaptive_with_gp
+from src.narrative import generate_paper_narrative
+
 logger = setup_logging('pipeline')
 
 # ── Parameters ────────────────────────────────────────────────────────────
@@ -2565,6 +2575,543 @@ def build_new_summary_sections(*, dupire_results, hc_pinn_call, hc_pinn_put,
     return lines
 
 
+# ====================================================================
+# PUBLICATION-READINESS step functions (PRD improvements #1-7)
+# ====================================================================
+
+def step_real_data_diagnostics(real_results):
+    """Run diagnose_real_data_quality on each ticker and save a text report.
+
+    Returns
+    -------
+    dict
+        ``{ticker: report_dict}``.
+    """
+    out = {}
+    try:
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        report_lines = []
+        for ticker, entry in per.items():
+            try:
+                surface = entry.get('surface_data')
+                option_data = entry.get('option_data')
+                if surface is None or option_data is None:
+                    print(f"  diagnose_real_data_quality({ticker}) SKIPPED: missing data")
+                    continue
+                rep = diagnose_real_data_quality(option_data, surface, ticker)
+                out[ticker] = rep
+                report_lines.append(f"--- {ticker} ---")
+                report_lines.append(
+                    f"  cond={rep['condition_number']:.3e}, "
+                    f"shape={rep['surface_shape']}, "
+                    f"corr_offdiag_max={rep['corr_offdiag_max']:.4f}"
+                )
+            except Exception as exc:
+                print(f"  diagnose_real_data_quality({ticker}) SKIPPED: {exc}")
+        if report_lines:
+            path = os.path.join(TBL_DIR, 'real_data_diagnostics.txt')
+            with open(path, 'w') as f:
+                f.write("\n".join(report_lines) + "\n")
+            print(f"  Saved: real_data_diagnostics.txt")
+    except Exception as exc:
+        print(f"  step_real_data_diagnostics SKIPPED: {exc}")
+    return out
+
+
+def step_gp_on_real_data(real_results):
+    """GP-SINDy on each ticker + side-by-side comparison vs FD/SavGol."""
+    try:
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if not per:
+            print("  step_gp_on_real_data SKIPPED: no per_ticker_results")
+            return {'gp_results': {}, 'comparison_df': None}
+
+        gp_results = run_gp_sindy_on_real_data(per, standardize=True)
+        try:
+            cmp_df = compare_derivative_methods_on_real_data(per, standardize=True)
+            cmp_path = os.path.join(TBL_DIR, 'gp_on_real_data.csv')
+            cmp_df.to_csv(cmp_path, index=False)
+            print(f"  Saved: gp_on_real_data.csv")
+        except Exception as exc:
+            print(f"  compare_derivative_methods_on_real_data SKIPPED: {exc}")
+            cmp_df = None
+        return {'gp_results': gp_results, 'comparison_df': cmp_df}
+    except Exception as exc:
+        print(f"  step_gp_on_real_data SKIPPED: {exc}")
+        return {'gp_results': {}, 'comparison_df': None}
+
+
+def step_gp_dupire_on_real_data(real_results):
+    """GP-Dupire on each ticker + comparison vs FD-Dupire."""
+    try:
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if not per:
+            print("  step_gp_dupire_on_real_data SKIPPED: no per_ticker_results")
+            return {'gp_dupire_results': {}, 'comparison_df': None}
+
+        gp_dup = run_gp_dupire_on_real_data(per, standardize=True)
+        try:
+            cmp_df = compare_dupire_methods(per)
+            cmp_path = os.path.join(TBL_DIR, 'gp_dupire_real_comparison.csv')
+            cmp_df.to_csv(cmp_path, index=False)
+            print(f"  Saved: gp_dupire_real_comparison.csv")
+        except Exception as exc:
+            print(f"  compare_dupire_methods SKIPPED: {exc}")
+            cmp_df = None
+        return {'gp_dupire_results': gp_dup, 'comparison_df': cmp_df}
+    except Exception as exc:
+        print(f"  step_gp_dupire_on_real_data SKIPPED: {exc}")
+        return {'gp_dupire_results': {}, 'comparison_df': None}
+
+
+def step_gp_kernel_comparison(real_results):
+    """Hotfix Fix 2: compare RBF vs Matern GP kernels on each real ticker."""
+    try:
+        from src.real_data_publication import compare_gp_kernels_on_real_data
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if not per:
+            print("  step_gp_kernel_comparison SKIPPED: no per_ticker_results")
+            return None
+        df = compare_gp_kernels_on_real_data(per, n_subsample=500, standardize=True, seed=42)
+        path = os.path.join(TBL_DIR, 'gp_kernel_comparison.csv')
+        df.to_csv(path, index=False)
+        print(f"  Saved: gp_kernel_comparison.csv")
+        for _, row in df.iterrows():
+            print(f"    {row.get('ticker','?'):<6s}  RBF R²={row.get('r2_rbf',float('nan')):+.3f}  "
+                  f"Matern R²={row.get('r2_matern',float('nan')):+.3f}  winner={row.get('kernel_winner','?')}")
+        return df
+    except Exception as exc:
+        print(f"  step_gp_kernel_comparison SKIPPED: {exc}")
+        return None
+
+
+def step_dupire_approaches(real_results):
+    """Hotfix Fix 3: evaluate 4 GP-Dupire approaches on synthetic, apply winner to real."""
+    try:
+        from src.real_data_publication import (
+            compare_dupire_approaches_synthetic, compare_dupire_approaches_real,
+        )
+        synth_df = compare_dupire_approaches_synthetic()
+        synth_path = os.path.join(TBL_DIR, 'dupire_approaches_synthetic.csv')
+        synth_df.to_csv(synth_path, index=False)
+        print(f"  Saved: dupire_approaches_synthetic.csv")
+        print(f"    Synthetic Dupire approach comparison:")
+        for _, row in synth_df.iterrows():
+            print(f"      {row.get('approach','?'):<25s}  R²={row.get('r2_score',float('nan')):+.4f}  "
+                  f"σ_recovered={row.get('sigma_recovered',float('nan')):.4f}  "
+                  f"rel_err={row.get('sigma_rel_error',float('nan')):.3f}")
+        # Pick winner
+        valid = synth_df[(synth_df['r2_score'] > 0.5) & (synth_df['sigma_rel_error'].abs() < 0.30)]
+        if len(valid) > 0:
+            winner = valid.loc[valid['r2_score'].idxmax(), 'approach']
+            print(f"    Synthetic winner: {winner}")
+        else:
+            winner = 'gp_smooth_fd_deriv'
+            print(f"    No synthetic winner > thresholds — defaulting to {winner}")
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if per:
+            real_df = compare_dupire_approaches_real(per, winner)
+            real_path = os.path.join(TBL_DIR, 'dupire_approaches_real.csv')
+            real_df.to_csv(real_path, index=False)
+            print(f"  Saved: dupire_approaches_real.csv")
+            for _, row in real_df.iterrows():
+                print(f"      {row.get('ticker','?'):<6s}  R²={row.get('r2_score',float('nan')):+.4f}  "
+                      f"σ={row.get('sigma_discovered',float('nan')):.4f}")
+            return {'synthetic_df': synth_df, 'real_df': real_df, 'winner': winner}
+        return {'synthetic_df': synth_df, 'real_df': None, 'winner': winner}
+    except Exception as exc:
+        print(f"  step_dupire_approaches SKIPPED: {exc}")
+        return None
+
+
+def step_dupire_cv_selection(real_results):
+    """PRD Part A: leave-one-expiration-out CV to pick the best Dupire approach.
+
+    Saves:
+      - outputs/tables/dupire_cv_selection.csv   (per-fold RMSEs)
+      - outputs/tables/dupire_final_real.csv     (per-ticker R², sigma, drift)
+    """
+    try:
+        from src.real_data_publication import run_dupire_cv_on_real_data
+
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if not per:
+            print("  step_dupire_cv_selection SKIPPED: no per_ticker_results")
+            return None
+
+        cv_out = run_dupire_cv_on_real_data(
+            per, tickers=list(per.keys()),
+            normalize_moneyness=True, seed=42,
+        )
+
+        # 1. dupire_cv_selection.csv — per-fold errors for all CV tickers.
+        all_fold_rows = []
+        for ticker, entry in cv_out.items():
+            if ticker == '_meta':
+                continue
+            df = entry.get('per_fold_errors_df')
+            if df is not None and len(df) > 0:
+                all_fold_rows.append(df)
+        if all_fold_rows:
+            cv_df = pd.concat(all_fold_rows, ignore_index=True)
+            cv_path = os.path.join(TBL_DIR, 'dupire_cv_selection.csv')
+            cv_df.to_csv(cv_path, index=False)
+            print(f"  Saved: dupire_cv_selection.csv  ({len(cv_df)} rows)")
+
+        # 2. dupire_final_real.csv — per-ticker best-approach result.
+        final_rows = []
+        for ticker, entry in cv_out.items():
+            if ticker == '_meta':
+                continue
+            final = entry.get('final', {})
+            final_rows.append({
+                'ticker': ticker,
+                'best_approach': entry.get('best_approach'),
+                'r2_score': float(final.get('r2_score', float('nan'))),
+                'sigma_recovered': float(final.get('sigma_recovered',
+                                                    float('nan'))),
+                'drift_recovered': float(final.get('drift_recovered',
+                                                    float('nan'))),
+                'avg_market_iv': float(final.get('avg_market_iv',
+                                                  float('nan'))),
+                'applied_spy_winner': bool(entry.get('applied_spy_winner',
+                                                      False)),
+                'normalize_moneyness': bool(entry.get('normalize_moneyness',
+                                                       False)),
+            })
+        if final_rows:
+            final_df = pd.DataFrame(final_rows)
+            final_path = os.path.join(TBL_DIR, 'dupire_final_real.csv')
+            final_df.to_csv(final_path, index=False)
+            print(f"  Saved: dupire_final_real.csv")
+            for _, row in final_df.iterrows():
+                print(f"      {row['ticker']:<6s}  best={row['best_approach']:<22s}"
+                      f"  R²={row['r2_score']:+.4f}"
+                      f"  σ={row['sigma_recovered']:.4f}"
+                      f"  iv={row['avg_market_iv']:.4f}")
+
+        return cv_out
+    except Exception as exc:
+        print(f"  step_dupire_cv_selection SKIPPED: {exc}")
+        return None
+
+
+def step_improved_real_pipeline(real_results):
+    """PRD Fixes 1-7: log-moneyness + SVI + 2-term Dupire + liquidity weights + ATM + windowed."""
+    try:
+        from src.real_data_v2 import run_improved_pipeline_all_tickers
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        if not per:
+            print("  step_improved_real_pipeline SKIPPED: no per_ticker_results")
+            return None
+        out = run_improved_pipeline_all_tickers(
+            per, use_svi=True, use_weights=True, run_atm=True, run_windowed=True, seed=42,
+        )
+        # Save per-ticker results CSV (real_data_v2 returns key 'per_ticker')
+        summary_rows = []
+        for ticker, res in (out.get('per_ticker') or out.get('per_ticker_results') or {}).items():
+            if not res:
+                continue
+            row = {'ticker': ticker, 'q': res.get('q'),
+                   'avg_market_iv': res.get('avg_market_iv')}
+            for slug, key in [('full', 'full_range'), ('atm', 'atm_only'),
+                               ('win', 'windowed')]:
+                blk = res.get(key) or {}
+                if slug == 'win':
+                    row[f'{slug}_n_valid'] = blk.get('n_valid_windows')
+                    row[f'{slug}_n_total'] = blk.get('n_total_windows')
+                    row[f'{slug}_sigma_median'] = blk.get('sigma_loc_median')
+                else:
+                    row[f'{slug}_r2'] = blk.get('r2_score')
+                    row[f'{slug}_sigma'] = blk.get('sigma_loc_discovered')
+                    row[f'{slug}_rq'] = blk.get('rq_implied')
+            summary_rows.append(row)
+        if summary_rows:
+            df = pd.DataFrame(summary_rows)
+            path = os.path.join(TBL_DIR, 'improved_real_pipeline.csv')
+            df.to_csv(path, index=False)
+            print(f"  Saved: improved_real_pipeline.csv")
+            for _, row in df.iterrows():
+                m = row.get('avg_market_iv', float('nan'))
+                fs = row.get('full_sigma', float('nan'))
+                rel = abs(fs - m) / m * 100 if m and fs else float('nan')
+                print(f"    {row['ticker']:<6s} σ_market={m:.4f}  "
+                      f"σ_full={fs:.4f}  rel_err={rel:.1f}%  "
+                      f"R²_full={row.get('full_r2',float('nan')):+.3f}  "
+                      f"windowed={row.get('win_n_valid','?')}/{row.get('win_n_total','?')}")
+        return out
+    except Exception as exc:
+        print(f"  step_improved_real_pipeline SKIPPED: {exc}")
+        return None
+
+
+def step_windowed_local_vol(real_results):
+    """Run windowed-local-vol extraction on SPY and QQQ, save sigma grids."""
+    out = {}
+    try:
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        for ticker in ('SPY', 'QQQ'):
+            try:
+                entry = per.get(ticker)
+                if entry is None:
+                    print(f"  windowed_local_vol({ticker}) SKIPPED: no data")
+                    continue
+                wlv = windowed_local_vol_extraction(
+                    entry, ticker, window_size=15, stride=3, min_r2=0.5,
+                )
+                out[ticker] = wlv
+
+                # Save sigma grid as CSV (long form for portability)
+                sigma_grid = wlv['sigma_local_grid']
+                K_centers = wlv['K_centers']
+                tau_centers = wlv['tau_centers']
+                rows = []
+                for i, k in enumerate(K_centers):
+                    for j, tau in enumerate(tau_centers):
+                        rows.append({
+                            'ticker': ticker,
+                            'K_center': float(k),
+                            'tau_center': float(tau),
+                            'sigma_local': float(sigma_grid[i, j]),
+                            'r2_local': float(wlv['r2_grid'][i, j]),
+                        })
+                df = pd.DataFrame(rows)
+                path = os.path.join(
+                    TBL_DIR, f'windowed_local_vol_{ticker}.csv',
+                )
+                df.to_csv(path, index=False)
+                print(
+                    f"  Saved: windowed_local_vol_{ticker}.csv "
+                    f"(valid={wlv['n_valid_windows']}/{wlv['n_total_windows']})"
+                )
+            except Exception as exc:
+                print(f"  windowed_local_vol({ticker}) SKIPPED: {exc}")
+    except Exception as exc:
+        print(f"  step_windowed_local_vol SKIPPED: {exc}")
+    return out
+
+
+def step_adaptive_recalibration_with_gp():
+    """Run recalibrate_adaptive_with_gp on 50x50 grid and save thresholds."""
+    try:
+        df, rec = recalibrate_adaptive_with_gp(
+            K=K, r=R, sigma=SIGMA, T=T,
+            n_S=NEW_EXPERIMENT_GRID, n_t=NEW_EXPERIMENT_GRID, seed=42,
+        )
+        # Save sweep
+        sweep_path = os.path.join(TBL_DIR, 'adaptive_with_gp_sweep.csv')
+        df.to_csv(sweep_path, index=False)
+        print(f"  Saved: adaptive_with_gp_sweep.csv")
+
+        # Save thresholds
+        thr_rows = [
+            {'strategy': name,
+             'noise_low': lo,
+             'noise_high': hi}
+            for name, (lo, hi) in rec['thresholds'].items()
+        ]
+        thr_df = pd.DataFrame(thr_rows)
+        thr_path = os.path.join(TBL_DIR, 'adaptive_with_gp_thresholds.csv')
+        thr_df.to_csv(thr_path, index=False)
+        print(f"  Saved: adaptive_with_gp_thresholds.csv")
+        return {'sweep_df': df, 'recommendation': rec}
+    except Exception as exc:
+        print(f"  step_adaptive_recalibration_with_gp SKIPPED: {exc}")
+        return {'sweep_df': None, 'recommendation': None}
+
+
+def step_standardized_discovery(data, real_results):
+    """Re-run discover_pde with standardize=True on synthetic + SPY, compare."""
+    rows = []
+    try:
+        # Synthetic clean (call surface)
+        for label_, do_std in [('synthetic_call_raw', False),
+                                ('synthetic_call_std', True)]:
+            try:
+                res = discover_pde(
+                    data['V_call'], data['S_grid'], data['t_grid'],
+                    true_sigma=SIGMA, true_r=R,
+                    smooth=False, K=K, T=T,
+                    standardize=do_std,
+                )
+                cond_raw = res.get('condition_number_raw',
+                                    res.get('condition_number', float('nan')))
+                cond_std = res.get('condition_number_standardized', None)
+                rows.append({
+                    'label': label_,
+                    'standardize': do_std,
+                    'r2_score': float(res.get('r2_score', float('nan'))),
+                    'condition_number': float(res.get('condition_number',
+                                                       float('nan'))),
+                    'condition_number_raw': float(cond_raw),
+                    'condition_number_standardized': (
+                        float(cond_std) if cond_std is not None else float('nan')
+                    ),
+                    'n_active': int(res.get('n_active', 0)),
+                    'active_terms': ', '.join(res.get('active_terms', [])),
+                    'pde': res.get('human_readable_pde', ''),
+                })
+                if do_std and cond_std is not None:
+                    print(f"  {label_}: cond raw={cond_raw:.2e}  "
+                          f"cond std={cond_std:.2e}  "
+                          f"(improvement {cond_raw/max(cond_std,1e-30):.1f}x)")
+            except Exception as exc:
+                print(f"  standardized_discovery({label_}) SKIPPED: {exc}")
+    except Exception as exc:
+        print(f"  step_standardized_discovery (synthetic) SKIPPED: {exc}")
+
+    # Real SPY surface
+    try:
+        per = (real_results or {}).get('per_ticker_results', {}) or {}
+        spy = per.get('SPY')
+        if spy is not None and spy.get('surface_data') is not None:
+            surface = spy['surface_data']
+            option_data = spy.get('option_data', {})
+            C = np.asarray(surface['V_surface'], dtype=float)
+            K_grid = np.asarray(surface['K_grid'], dtype=float)
+            tau_grid = np.asarray(surface['tau_grid'], dtype=float)
+            r_eff = float(surface.get('r', option_data.get('r', 0.045)))
+            sigma_eff = float(spy.get('avg_implied_vol', 0.2))
+            T_max = float(tau_grid.max())
+            V_t = C[:, ::-1]
+            t_grid_cm = T_max - tau_grid[::-1]
+
+            for label_, do_std in [('SPY_raw', False), ('SPY_std', True)]:
+                try:
+                    res = discover_pde(
+                        V_t, K_grid, t_grid_cm,
+                        true_sigma=sigma_eff, true_r=r_eff,
+                        smooth=True, K=float(np.median(K_grid)), T=T_max,
+                        option_type='call', standardize=do_std,
+                    )
+                    cond_raw = res.get('condition_number_raw',
+                                        res.get('condition_number', float('nan')))
+                    cond_std = res.get('condition_number_standardized', None)
+                    rows.append({
+                        'label': label_,
+                        'standardize': do_std,
+                        'r2_score': float(res.get('r2_score', float('nan'))),
+                        'condition_number': float(res.get('condition_number',
+                                                           float('nan'))),
+                        'condition_number_raw': float(cond_raw),
+                        'condition_number_standardized': (
+                            float(cond_std) if cond_std is not None else float('nan')
+                        ),
+                        'n_active': int(res.get('n_active', 0)),
+                        'active_terms': ', '.join(res.get('active_terms', [])),
+                        'pde': res.get('human_readable_pde', ''),
+                    })
+                    if do_std and cond_std is not None:
+                        print(f"  {label_}: cond raw={cond_raw:.2e}  "
+                              f"cond std={cond_std:.2e}  "
+                              f"(improvement {cond_raw/max(cond_std,1e-30):.1f}x)")
+                except Exception as exc:
+                    print(f"  standardized_discovery({label_}) SKIPPED: {exc}")
+    except Exception as exc:
+        print(f"  step_standardized_discovery (real) SKIPPED: {exc}")
+
+    df = pd.DataFrame(rows) if rows else None
+    if df is not None and len(df) > 0:
+        path = os.path.join(TBL_DIR, 'standardization_comparison.csv')
+        df.to_csv(path, index=False)
+        print(f"  Saved: standardization_comparison.csv")
+    return {'comparison_df': df}
+
+
+def step_contribution_analysis_real_data(real_results):
+    """
+    Compute per-term physical contributions for each ticker's SINDy result.
+
+    Raw SINDy coefficients on real data can be misleading when library
+    columns differ in magnitude by 4+ orders (e.g. ``dV/dS ~ 0.03`` vs
+    ``S^2 d2V/dS^2 ~ 355``). The mean absolute contribution
+    ``|c_j| * mean|col_j|`` tells you what each term actually adds to the
+    predicted dV/dt.
+
+    Saves ``outputs/tables/term_contributions_real.csv`` with one row per
+    (ticker, term) and returns ``{'contributions_df': DataFrame}``.
+    """
+    if not real_results or 'per_ticker_results' not in real_results:
+        print("  step_contribution_analysis_real_data: no real_results, SKIPPED")
+        return {'contributions_df': None}
+
+    per = real_results.get('per_ticker_results', {}) or {}
+    all_rows = []
+
+    for ticker, res in per.items():
+        sindy_res = (res or {}).get('sindy_result', None)
+        surface = (res or {}).get('surface_data', None)
+        if sindy_res is None or surface is None:
+            continue
+        try:
+            C = np.asarray(surface['V_surface'], dtype=float)
+            K_grid = np.asarray(surface['K_grid'], dtype=float)
+            tau_grid = np.asarray(surface['tau_grid'], dtype=float)
+            # Replicate the calendar-time flip used in the original real-data run
+            T_max = float(tau_grid.max())
+            V_t = C[:, ::-1]
+            t_grid_cm = T_max - tau_grid[::-1]
+
+            df_t = compute_term_contributions(
+                sindy_res, V_t, K_grid, t_grid_cm, trim=2, smooth=True,
+            )
+
+            print(f"\nTERM CONTRIBUTION ANALYSIS ({ticker}):")
+            header = (f"  {'Term':<12s} | {'Coefficient':>12s} | "
+                      f"{'Mean |Col|':>12s} | {'Mean |Contrib|':>14s} | "
+                      f"{'Fraction':>8s}")
+            print(header)
+            print(f"  {'-'*12}-+-{'-'*12}-+-{'-'*12}-+-{'-'*14}-+-{'-'*8}")
+            for _, row in df_t.iterrows():
+                print(f"  {row['term']:<12s} | "
+                      f"{row['coefficient']:>12.4f} | "
+                      f"{row['mean_abs_column']:>12.4g} | "
+                      f"{row['mean_abs_contribution']:>14.4g} | "
+                      f"{100*row['fraction_of_total']:>7.1f}%")
+
+            df_t.insert(0, 'ticker', ticker)
+            all_rows.append(df_t)
+        except Exception as exc:
+            print(f"  contribution_analysis({ticker}) SKIPPED: {exc}")
+
+    if not all_rows:
+        return {'contributions_df': None}
+
+    full_df = pd.concat(all_rows, ignore_index=True)
+    path = os.path.join(TBL_DIR, 'term_contributions_real.csv')
+    full_df.to_csv(path, index=False)
+    print(f"\n  Saved: term_contributions_real.csv")
+    return {'contributions_df': full_df}
+
+
+def step_generate_paper_figures(all_results):
+    """Call viz.generate_paper_figures and report saved figures."""
+    try:
+        out = viz.generate_paper_figures(all_results)
+        n_ok = sum(1 for v in out.values() if v)
+        print(f"  Generated {n_ok}/{len(out)} paper figures")
+        for name, path in out.items():
+            if path:
+                print(f"    {name}: {os.path.basename(path)} (+ .pdf)")
+            else:
+                print(f"    {name}: SKIPPED")
+        return out
+    except Exception as exc:
+        print(f"  step_generate_paper_figures SKIPPED: {exc}")
+        return {}
+
+
+def step_generate_paper_narrative(all_results):
+    """Call generate_paper_narrative and save the text."""
+    try:
+        text, path = generate_paper_narrative(all_results)
+        print(f"  Saved: {os.path.basename(path)}")
+        return {'text': text, 'path': path}
+    except Exception as exc:
+        print(f"  step_generate_paper_narrative SKIPPED: {exc}")
+        return {'text': None, 'path': None}
+
+
 def main():
     banner()
 
@@ -2702,6 +3249,89 @@ def main():
 
         # IV regime analysis (SPY, QQQ only)
         regime_results = step_iv_regime_analysis(real_results)
+
+        # ============ PUBLICATION-READINESS IMPROVEMENTS ============
+        print("\n" + "=" * 64)
+        print("  === PUBLICATION-READINESS IMPROVEMENTS ===")
+        print("=" * 64)
+
+        # 1. Real-data quality diagnostics (per ticker)
+        try:
+            real_diag = step_real_data_diagnostics(real_results)
+        except Exception as e:
+            print(f"  step_real_data_diagnostics SKIPPED: {e}")
+            real_diag = {}
+
+        # 2. GP-SINDy on real data + cross-method comparison
+        try:
+            gp_real = step_gp_on_real_data(real_results)
+        except Exception as e:
+            print(f"  step_gp_on_real_data SKIPPED: {e}")
+            gp_real = {'gp_results': {}, 'comparison_df': None}
+
+        # 3. GP-Dupire on real data + comparison to FD-Dupire
+        try:
+            gp_dupire_real = step_gp_dupire_on_real_data(real_results)
+        except Exception as e:
+            print(f"  step_gp_dupire_on_real_data SKIPPED: {e}")
+            gp_dupire_real = {'gp_dupire_results': {}, 'comparison_df': None}
+
+        # 3a. Hotfix Fix 2 — GP kernel comparison (RBF vs Matern per ticker)
+        try:
+            gp_kernels_df = step_gp_kernel_comparison(real_results)
+        except Exception as e:
+            print(f"  step_gp_kernel_comparison SKIPPED: {e}")
+            gp_kernels_df = None
+
+        # 3b. Hotfix Fix 3 — GP-Dupire 4-approach evaluation
+        try:
+            dupire_approaches = step_dupire_approaches(real_results)
+        except Exception as e:
+            print(f"  step_dupire_approaches SKIPPED: {e}")
+            dupire_approaches = None
+
+        # 3c. PRD Part A — leave-one-expiration-out CV picker
+        try:
+            dupire_cv = step_dupire_cv_selection(real_results)
+        except Exception as e:
+            print(f"  step_dupire_cv_selection SKIPPED: {e}")
+            dupire_cv = None
+
+        # 3d. Results-Improvement PRD — Fixes 1-7 combined: log-moneyness + SVI
+        # + 2-term Dupire + liquidity weights + ATM + windowed
+        try:
+            improved_real = step_improved_real_pipeline(real_results)
+        except Exception as e:
+            print(f"  step_improved_real_pipeline SKIPPED: {e}")
+            improved_real = None
+
+        # 4. Windowed local-vol extraction (SPY, QQQ)
+        try:
+            windowed_lv = step_windowed_local_vol(real_results)
+        except Exception as e:
+            print(f"  step_windowed_local_vol SKIPPED: {e}")
+            windowed_lv = {}
+
+        # 5. Adaptive recalibration including GP (50x50 noise sweep)
+        try:
+            adaptive_gp = step_adaptive_recalibration_with_gp()
+        except Exception as e:
+            print(f"  step_adaptive_recalibration_with_gp SKIPPED: {e}")
+            adaptive_gp = {'sweep_df': None, 'recommendation': None}
+
+        # 6. Standardized re-discovery (synthetic + SPY)
+        try:
+            std_compare = step_standardized_discovery(data, real_results)
+        except Exception as e:
+            print(f"  step_standardized_discovery SKIPPED: {e}")
+            std_compare = {'comparison_df': None}
+
+        # 6b. Per-term physical contribution analysis on real data
+        try:
+            contrib_real = step_contribution_analysis_real_data(real_results)
+        except Exception as e:
+            print(f"  step_contribution_analysis_real_data SKIPPED: {e}")
+            contrib_real = {'contributions_df': None}
 
         # ============ NEW IMPROVEMENTS (PRD #1-16) ============
         print("\n" + "=" * 64)
@@ -3408,6 +4038,179 @@ def main():
             summary_lines.append(f"  [New sections 9-13 SKIPPED: {e}]")
             summary_lines.append("")
 
+        # ── SECTION 14: PUBLICATION-READINESS RESULTS ──────────────
+        try:
+            summary_lines.append("")
+            summary_lines.append("  14. PUBLICATION-READINESS RESULTS")
+            summary_lines.append("  " + "=" * 65)
+
+            # Standardized SPY before/after
+            std_df = std_compare.get('comparison_df') if std_compare else None
+            if std_df is not None and len(std_df) > 0:
+                summary_lines.append("     Standardization (condition number):")
+                for _, srow in std_df.iterrows():
+                    summary_lines.append(
+                        f"       {srow['label']:<22s}: cond={srow['condition_number']:.3e}  "
+                        f"R²={srow['r2_score']:.4f}  n_active={srow['n_active']}"
+                    )
+
+            # GP-on-real R² per ticker
+            gp_res = gp_real.get('gp_results') if gp_real else {}
+            if gp_res:
+                summary_lines.append("")
+                summary_lines.append("     GP-SINDy on real data R² per ticker:")
+                for tk, gp_r in gp_res.items():
+                    if 'error' in gp_r:
+                        summary_lines.append(f"       {tk}: FAILED ({gp_r.get('message','?')})")
+                    else:
+                        summary_lines.append(
+                            f"       {tk}: R²={gp_r.get('gp_r2', float('nan')):.4f}  "
+                            f"sigma_disc={gp_r.get('sigma_discovered', float('nan')):.4f}"
+                        )
+
+            # GP-Dupire R² per ticker
+            gp_dup_res = gp_dupire_real.get('gp_dupire_results') if gp_dupire_real else {}
+            if gp_dup_res:
+                summary_lines.append("")
+                summary_lines.append("     GP-Dupire on real data R² per ticker:")
+                for tk, gp_r in gp_dup_res.items():
+                    if 'error' in gp_r:
+                        summary_lines.append(f"       {tk}: FAILED ({gp_r.get('message','?')})")
+                    else:
+                        summary_lines.append(
+                            f"       {tk}: R²={gp_r.get('r2_score', float('nan')):.4f}  "
+                            f"sigma_disc={gp_r.get('sigma_discovered', float('nan')):.4f}  "
+                            f"drift={gp_r.get('drift_discovered', float('nan')):.4f}"
+                        )
+
+            # Windowed local vol per ticker
+            if windowed_lv:
+                summary_lines.append("")
+                summary_lines.append("     Windowed local-vol extraction:")
+                for tk, wlv in windowed_lv.items():
+                    sigma_grid = wlv.get('sigma_local_grid')
+                    if sigma_grid is not None:
+                        finite = sigma_grid[np.isfinite(sigma_grid)]
+                        mean_s = float(np.mean(finite)) if finite.size else float('nan')
+                        summary_lines.append(
+                            f"       {tk}: n_valid={wlv['n_valid_windows']}/"
+                            f"{wlv['n_total_windows']}, "
+                            f"mean_sigma_local={mean_s:.4f}"
+                        )
+
+            # New adaptive thresholds (with GP)
+            rec = adaptive_gp.get('recommendation') if adaptive_gp else None
+            if rec:
+                summary_lines.append("")
+                summary_lines.append("     Adaptive denoiser thresholds (with GP):")
+                summary_lines.append(
+                    f"       GP crossover (SavGol->GP): {rec['gp_crossover']:.4f}"
+                )
+                summary_lines.append(
+                    f"       Weak crossover (GP->Weak):  {rec['weak_crossover']:.4f}"
+                )
+                for nm, (lo, hi) in rec['thresholds'].items():
+                    summary_lines.append(
+                        f"       {nm:<10s}: noise in [{lo:.4f}, "
+                        f"{hi if hi != float('inf') else 'inf'}]"
+                    )
+
+            # Dupire CV selection (PRD Part A)
+            if 'dupire_cv' in locals() and dupire_cv:
+                summary_lines.append("")
+                summary_lines.append("     Dupire CV selection (real data):")
+                for tk in ('SPY', 'QQQ', 'AAPL', 'MSFT'):
+                    entry = dupire_cv.get(tk)
+                    if not entry:
+                        continue
+                    final = entry.get('final', {})
+                    best = entry.get('best_approach', 'n/a')
+                    r2 = float(final.get('r2_score', float('nan')))
+                    sig = float(final.get('sigma_recovered', float('nan')))
+                    iv = float(final.get('avg_market_iv', float('nan')))
+                    if entry.get('applied_spy_winner'):
+                        summary_lines.append(
+                            f"       {tk}: applied SPY winner ({best}),"
+                            f" R²={r2:.3f}"
+                        )
+                    else:
+                        summary_lines.append(
+                            f"       {tk}: best_approach={best},"
+                            f" R²={r2:.3f}, sigma={sig:.3f},"
+                            f" market_iv={iv:.3f}"
+                        )
+
+            summary_lines.append("")
+        except Exception as e:
+            summary_lines.append(f"  [Section 14 SKIPPED: {e}]")
+            summary_lines.append("")
+
+        # ── Section 15: References & Positioning (PRD #6) ─────────────
+        summary_lines.append("  15. REFERENCES & POSITIONING")
+        summary_lines.append("  =================================================================")
+        summary_lines.append("")
+        summary_lines.append("     KEY PRIOR WORK:")
+        summary_lines.append("       [1] Feng, Lin, Matlia & Serdarevic (2025).")
+        summary_lines.append("           Data-driven Feynman-Kac Discovery with Applications to")
+        summary_lines.append("           Prediction and Data Generation.")
+        summary_lines.append("           NeurIPS 2025 Workshop on Generative AI in Finance.")
+        summary_lines.append("           arXiv:2511.08606")
+        summary_lines.append("           --- CLOSEST PRIOR WORK ---")
+        summary_lines.append("           Applies stochastic SINDy under the risk-neutral measure to")
+        summary_lines.append("           recover the BS BSDE from real AAPL time-series data.")
+        summary_lines.append("")
+        summary_lines.append("       [2] Gao, Kutz & Font (2025).")
+        summary_lines.append("           Mesh-free sparse identification of nonlinear dynamics.")
+        summary_lines.append("           arXiv:2505.16058")
+        summary_lines.append("           Uses neural network + autograd for PDE discovery on physics")
+        summary_lines.append("           PDEs. Our GP-derivative results show kernel methods")
+        summary_lines.append("           outperform this neural approach on financial data.")
+        summary_lines.append("")
+        summary_lines.append("       [3] Forootani et al. (2026).")
+        summary_lines.append("           GN-SINDy: Equation discovery via sparse regression on")
+        summary_lines.append("           refined analytical gradients.")
+        summary_lines.append("           International Journal of Systems Science.")
+        summary_lines.append("           Greedy sampling + DNN surrogates for PDE discovery.")
+        summary_lines.append("")
+        summary_lines.append("       [4] Brunton, Proctor & Kutz (2016). PNAS 113(15).")
+        summary_lines.append("           Foundational SINDy reference.")
+        summary_lines.append("       [5] Fasel, Kutz, Brunton & Brunton (2022). Proc. R. Soc. A 478.")
+        summary_lines.append("           Ensemble-SINDy reference.")
+        summary_lines.append("       [6] Raissi, Perdikaris & Karniadakis (2019). J. Comput. Phys. 378.")
+        summary_lines.append("           PINN reference.")
+        summary_lines.append("")
+        summary_lines.append("     POSITIONING vs FENG ET AL. 2025:")
+        summary_lines.append("       Feng et al. recover stochastic dynamics (BSDEs) from individual")
+        summary_lines.append("       stock-option trajectories using stochastic SINDy. We discover")
+        summary_lines.append("       deterministic dynamics (PDEs) from cross-sectional option")
+        summary_lines.append("       surfaces, and provide the first systematic comparison of")
+        summary_lines.append("       derivative estimation strategies for financial PDE discovery.")
+        summary_lines.append("")
+        summary_lines.append("       AXIS         | Feng et al. 2025         | This work")
+        summary_lines.append("       -------------|--------------------------|------------------------")
+        summary_lines.append("       Data         | single-stock trajectories| cross-sectional surfaces")
+        summary_lines.append("                    | (real AAPL time series)  | (SPY/QQQ/AAPL/MSFT")
+        summary_lines.append("                    |                          |  1,374 contracts)")
+        summary_lines.append("       Model class  | stochastic (BSDE)        | deterministic (PDE)")
+        summary_lines.append("                    | risk-neutral measure     | Black-Scholes + Dupire")
+        summary_lines.append("       Method       | stochastic SINDy         | derivative SINDy with")
+        summary_lines.append("                    |                          | 6-method comparison")
+        summary_lines.append("       Eval metric  | trajectory likelihood    | R²(clean) — separates")
+        summary_lines.append("                    |                          | fit from coefficient acc.")
+        summary_lines.append("")
+        summary_lines.append("     UNIQUE CONTRIBUTIONS OF THIS WORK:")
+        summary_lines.append("       (a) GP-derivative-enhanced SINDy applied to financial option")
+        summary_lines.append("           surfaces (no prior application in finance).")
+        summary_lines.append("       (b) Systematic comparison of 6 derivative methods for financial")
+        summary_lines.append("           PDE discovery with R²(clean) evaluation.")
+        summary_lines.append("       (c) Misspecification diagnostic via SINDy spurious-term")
+        summary_lines.append("           activation on Merton jump-diffusion data.")
+        summary_lines.append("       (d) Dupire equation discovery from cross-sectional option")
+        summary_lines.append("           surfaces (Feng et al. work in BSDE framework).")
+        summary_lines.append("       (e) The R²(clean) vs R²(noisy) distinction revealing that")
+        summary_lines.append("           neural SINDy fit quality and coefficient accuracy diverge.")
+        summary_lines.append("")
+
         summary_lines.append("=" * 72)
 
         summary_text = "\n".join(summary_lines)
@@ -3418,6 +4221,59 @@ def main():
         with open(summary_path, 'w') as f:
             f.write(summary_text + "\n")
         print(f"\n  Saved: {os.path.basename(summary_path)}")
+
+        # ── Paper figures + narrative (Improvements #6, #7) ──────────
+        print(f"\n" + "=" * 64)
+        print("  PAPER FIGURES & NARRATIVE")
+        print("=" * 64)
+
+        # Assemble the bundle of inputs for paper-figure + narrative helpers.
+        std_df_for_bundle = std_compare.get('comparison_df') if std_compare else None
+        cond_before = cond_after = None
+        if std_df_for_bundle is not None and len(std_df_for_bundle) > 0:
+            try:
+                spy_rows = std_df_for_bundle[
+                    std_df_for_bundle['label'].str.startswith('SPY')
+                ]
+                if len(spy_rows) >= 2:
+                    cond_before = float(spy_rows[
+                        spy_rows['standardize'] == False
+                    ].iloc[0]['condition_number'])
+                    cond_after = float(spy_rows[
+                        spy_rows['standardize'] == True
+                    ].iloc[0]['condition_number'])
+            except Exception:
+                pass
+
+        all_results_bundle = {
+            'all_methods_df': all_methods_df,
+            'gp_noise_df': gp_noise_df,
+            'pinn_put': pinn_put,
+            'hc_pinn_put': hc_pinn_put,
+            'lp_pinn_put': lp_pinn_put,
+            'real_results': real_results,
+            'windowed_lv': windowed_lv,
+            'merton_result': merton_result,
+            'heston_result': heston_result,
+            'gp_on_real': gp_real.get('gp_results') if gp_real else {},
+            'std_compare': {
+                'cond_before': cond_before,
+                'cond_after': cond_after,
+            },
+            'regime_results': regime_results,
+        }
+
+        # Paper figures
+        try:
+            step_generate_paper_figures(all_results_bundle)
+        except Exception as e:
+            print(f"  step_generate_paper_figures SKIPPED: {e}")
+
+        # Paper narrative
+        try:
+            step_generate_paper_narrative(all_results_bundle)
+        except Exception as e:
+            print(f"  step_generate_paper_narrative SKIPPED: {e}")
 
     # Save computation timing
     from src.utils import get_all_timings, save_timings

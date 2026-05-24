@@ -60,31 +60,83 @@ class TestNoiseEstimation20pct:
 
 class TestStrategySelection:
     def test_strategy_selection(self):
-        """Correct strategies for different noise levels (empirically calibrated)."""
+        """Correct strategies for different noise levels (recalibrated with GP)."""
         from src.adaptive_denoiser import select_derivative_strategy
 
+        # FD: < 0.5% noise
         strat_clean, _ = select_derivative_strategy(0.002)
         assert strat_clean == 'fd'
 
-        strat_low, _ = select_derivative_strategy(0.01)
+        # SavGol: narrow band 0.5% - 1% (safety margin before GP)
+        strat_low, _ = select_derivative_strategy(0.007)
         assert strat_low == 'savgol'
 
-        # SavGol dominates up to ~3% noise
+        # GP: 1% - 12% (dominates here per R²(clean) crossover analysis)
         strat_med, _ = select_derivative_strategy(0.025)
-        assert strat_med == 'savgol'
+        assert strat_med == 'gp'
 
-        # Weak SINDy takes over at >= 3% noise
-        strat_high, _ = select_derivative_strategy(0.05)
-        assert strat_high == 'weak'
+        strat_5pct, _ = select_derivative_strategy(0.05)
+        assert strat_5pct == 'gp'
 
+        strat_10pct, _ = select_derivative_strategy(0.10)
+        assert strat_10pct == 'gp'
+
+        # Weak SINDy takes over at >= 12% noise (GP collapses by 15%)
         strat_15, _ = select_derivative_strategy(0.15)
         assert strat_15 == 'weak'
 
         strat_30, _ = select_derivative_strategy(0.30)
         assert strat_30 == 'weak'
 
+        # Unreliable: >= 50% noise
         strat_extreme, _ = select_derivative_strategy(0.60)
         assert strat_extreme == 'unreliable'
+
+
+class TestGpSelectedForModerateNoise:
+    def test_gp_selected_for_moderate_noise(self):
+        """At 10% noise, strategy should be 'gp' (GP beats SavGol and Weak)."""
+        from src.adaptive_denoiser import select_derivative_strategy
+
+        strat, params = select_derivative_strategy(0.10)
+        assert strat == 'gp', f"Expected 'gp' at 10% noise, got '{strat}'"
+        assert 'n_subsample' in params, \
+            f"GP params should include n_subsample, got {params}"
+
+
+class TestRecalibrationReturnsDataframe:
+    def test_recalibration_returns_dataframe(self):
+        """recalibrate_adaptive_with_gp() returns DataFrame with expected columns.
+
+        Runs a tiny 2-noise-level sweep on a small grid so the test stays
+        fast; only checks structure, not correctness of the threshold values.
+        """
+        import pandas as pd
+        from src.adaptive_denoiser import recalibrate_adaptive_with_gp
+
+        df, recommended = recalibrate_adaptive_with_gp(
+            n_S=20, n_t=20, seed=42,
+            noise_levels=[0.0, 0.05],
+            n_subsample=80,
+        )
+
+        assert isinstance(df, pd.DataFrame), "Expected a pandas DataFrame"
+        expected_cols = {
+            'noise_pct', 'r2_fd', 'r2_savgol', 'r2_gp', 'r2_weak',
+            'runtime_fd_s', 'runtime_savgol_s',
+            'runtime_gp_s', 'runtime_weak_s',
+        }
+        assert expected_cols.issubset(set(df.columns)), \
+            f"Missing columns: {expected_cols - set(df.columns)}"
+        assert len(df) == 2, f"Expected 2 rows, got {len(df)}"
+
+        # Check recommended dict structure
+        assert isinstance(recommended, dict)
+        assert 'gp_crossover' in recommended
+        assert 'weak_crossover' in recommended
+        assert 'thresholds' in recommended
+        assert 'fd' in recommended['thresholds']
+        assert 'gp' in recommended['thresholds']
 
 
 class TestAdaptiveRunsWithoutError:

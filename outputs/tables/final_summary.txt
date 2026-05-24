@@ -31,17 +31,17 @@
 
   5. ADAPTIVE DENOISER
      Thresholds: FD < 0.5%, SavGol 0.5%-2.5%, Weak >= 2.5%
-     Near-oracle performance: within 0.000 of best method at all noise levels
+     Near-oracle performance: within 0.081 of best method at all noise levels
 
-     noise= 0.0%: strategy=savgol, R²(clean)=0.9999
-     noise= 0.5%: strategy=savgol, R²(clean)=0.9891
-     noise= 1.0%: strategy=savgol, R²(clean)=0.9578
-     noise= 2.0%: strategy=savgol, R²(clean)=0.9064
-     noise= 3.0%: strategy=weak, R²(clean)=0.8913
-     noise= 5.0%: strategy=weak, R²(clean)=0.8853
-     noise= 7.0%: strategy=weak, R²(clean)=0.8846
-     noise=10.0%: strategy=weak, R²(clean)=0.8878
-     noise=12.0%: strategy=weak, R²(clean)=0.8874
+     noise= 0.0%: strategy=gp, R²(clean)=1.0000
+     noise= 0.5%: strategy=gp, R²(clean)=0.9970
+     noise= 1.0%: strategy=gp, R²(clean)=0.9899
+     noise= 2.0%: strategy=gp, R²(clean)=0.9813
+     noise= 3.0%: strategy=gp, R²(clean)=0.9725
+     noise= 5.0%: strategy=gp, R²(clean)=0.9508
+     noise= 7.0%: strategy=gp, R²(clean)=0.9385
+     noise=10.0%: strategy=gp, R²(clean)=0.9199
+     noise=12.0%: strategy=gp, R²(clean)=0.9094
      noise=15.0%: strategy=weak, R²(clean)=0.8789
      noise=20.0%: strategy=weak, R²(clean)=0.8316
      noise=25.0%: strategy=weak, R²(clean)=0.7272
@@ -52,13 +52,13 @@
    Noise |       FD |   SavGol |  Neural* |     Weak | Adaptive |   Best
   ----------------------------------------------------------------------
    0.0% |    1.000 |    1.000 |    0.867 |    0.901 |    1.000 |     FD
-   0.5% |    0.825 |    0.989 |    0.866 |    0.900 |    0.989 |     SG
-   1.0% |    0.816 |    0.958 |    0.857 |    0.898 |    0.958 |     SG
-   2.0% |    0.791 |    0.906 |    0.811 |    0.895 |    0.906 |     SG
-   3.0% |    0.716 |    0.871 |    0.739 |    0.891 |    0.891 |   Weak
-   5.0% |    0.405 |    0.846 |    0.557 |    0.885 |    0.885 |   Weak
-   7.0% |    0.010 |    0.835 |    0.369 |    0.885 |    0.885 |   Weak
-  10.0% |   -0.486 |    0.816 |    0.119 |    0.888 |    0.888 |   Weak
+   0.5% |    0.825 |    0.989 |    0.866 |    0.900 |    0.997 |     SG
+   1.0% |    0.816 |    0.958 |    0.857 |    0.898 |    0.990 |     SG
+   2.0% |    0.791 |    0.906 |    0.811 |    0.895 |    0.981 |     SG
+   3.0% |    0.716 |    0.871 |    0.739 |    0.891 |    0.972 |   Weak
+   5.0% |    0.405 |    0.846 |    0.557 |    0.885 |    0.951 |   Weak
+   7.0% |    0.010 |    0.835 |    0.369 |    0.885 |    0.938 |   Weak
+  10.0% |   -0.486 |    0.816 |    0.119 |    0.888 |    0.920 |   Weak
   15.0% |   -0.995 |    0.757 |   -0.207 |    0.879 |    0.879 |   Weak
   20.0% |   -1.298 |    0.650 |   -0.434 |    0.832 |    0.832 |   Weak
   30.0% |   -1.797 |    0.345 |   -1.067 |    0.572 |    0.572 |   Weak
@@ -71,34 +71,34 @@
   8. REAL MARKET DATA FINDINGS
 
      Dividend Yield Discovery:
-       SPY (cached): q_implied=implausible, q_actual~0.0130, match=NO
-       QQQ (cached): q_implied=implausible, q_actual~0.0050, match=NO
-       AAPL (cached): q_implied=implausible, q_actual~0.0050, match=NO
-       MSFT (cached): q_implied=implausible, q_actual~0.0070, match=NO
+       SPY (live): q_implied=implausible, q_actual~0.0130, match=NO
+       QQQ (live): q_implied=implausible, q_actual~0.0050, match=NO
+       AAPL (live): q_implied=implausible, q_actual~0.0050, match=NO
+       MSFT (live): q_implied=implausible, q_actual~0.0070, match=NO
 
      Jump Dynamics (Merton Bridge):
-       SPY: closer to BS (cos_BS=-0.002, cos_Merton=-0.177, jump_est=5.2111)
-       QQQ: closer to BS (cos_BS=-0.002, cos_Merton=-0.023, jump_est=1.5635)
-       AAPL: closer to Merton (cos_BS=-0.002, cos_Merton=0.927, jump_est=15.8338)
-       MSFT: closer to BS (cos_BS=-0.003, cos_Merton=-0.011, jump_est=1.3953)
+       SPY: closer to BS (cos_BS=-0.002, cos_Merton=-0.181, jump_est=5.2602)
+       QQQ: closer to BS (cos_BS=-0.002, cos_Merton=-0.016, jump_est=1.3658)
+       AAPL: closer to Merton (cos_BS=-0.001, cos_Merton=0.936, jump_est=16.8762)
+       MSFT: closer to BS (cos_BS=-0.003, cos_Merton=-0.011, jump_est=1.3742)
 
      SPY IV Regime Analysis:
        Volatility skew detected: YES
-       Term structure shape: downward
-       Maturity: Short=15.8%, Medium=17.7%, Long=19.8%
-       Moneyness: OTM-put=29.4%, ATM=15.7%, OTM-call=15.8%
+       Term structure shape: upward
+       Maturity: Short=16.3%, Medium=17.8%, Long=19.8%
+       Moneyness: OTM-put=29.7%, ATM=16.0%, OTM-call=16.0%
      QQQ IV Regime Analysis:
        Volatility skew detected: YES
-       Term structure shape: downward
-       Maturity: Short=22.0%, Medium=22.4%, Long=27.0%
-       Moneyness: OTM-put=33.5%, ATM=22.6%, OTM-call=21.4%
+       Term structure shape: upward
+       Maturity: Short=22.5%, Medium=22.8%, Long=27.1%
+       Moneyness: OTM-put=33.9%, ATM=23.0%, OTM-call=21.6%
 
   9. DUPIRE EQUATION DISCOVERY
      Sanity: R^2=0.9990, sigma=0.1999, drift=0.0522
-     AAPL: R^2=0.1421, sigma=nan
-     MSFT: R^2=-0.2575, sigma=0.0792
-     QQQ: R^2=0.2496, sigma=0.0893
-     SPY: R^2=0.7379, sigma=0.0637
+     AAPL: R^2=0.1453, sigma=nan
+     MSFT: R^2=-0.2235, sigma=0.0832
+     QQQ: R^2=0.2664, sigma=0.0891
+     SPY: R^2=0.7314, sigma=0.0648
 
   10. PINN VARIANTS COMPARISON
       ----------------------------------------------------------------
@@ -137,5 +137,109 @@
       Spectral weak SINDy R^2=0.9862 vs Gaussian SINDy R^2=1.0000
       PySR status: skipped (PySR unavailable: No module named 'pysr')
       CV-selected threshold: 1.0000 (BIC threshold from SINDy: 0.0010)
+
+
+  14. PUBLICATION-READINESS RESULTS
+  =================================================================
+     Standardization (condition number):
+       synthetic_call_raw    : cond=6.783e+04  R²=1.0000  n_active=5
+       synthetic_call_std    : cond=9.096e+01  R²=1.0000  n_active=5
+       SPY_raw               : cond=3.327e+06  R²=0.7518  n_active=4
+       SPY_std               : cond=6.137e+01  R²=0.7529  n_active=5
+
+     GP-SINDy on real data R² per ticker:
+       SPY: R²=0.9624  sigma_disc=0.2448
+       QQQ: R²=0.9285  sigma_disc=0.2769
+       AAPL: R²=0.9246  sigma_disc=0.2406
+       MSFT: R²=0.3876  sigma_disc=0.3100
+
+     GP-Dupire on real data R² per ticker:
+       SPY: R²=0.5843  sigma_disc=0.0680  drift=0.3468
+       QQQ: R²=0.9203  sigma_disc=0.1957  drift=0.3497
+       AAPL: R²=0.6594  sigma_disc=0.1782  drift=0.3185
+       MSFT: R²=0.6481  sigma_disc=0.3652  drift=0.4269
+
+     Windowed local-vol extraction:
+       SPY: n_valid=10/27, mean_sigma_local=0.2875
+       QQQ: n_valid=11/18, mean_sigma_local=0.3452
+
+     Adaptive denoiser thresholds (with GP):
+       GP crossover (SavGol->GP): 0.0050
+       Weak crossover (GP->Weak):  0.1500
+       fd        : noise in [0.0000, 0.005]
+       savgol    : noise in [0.0050, 0.005]
+       gp        : noise in [0.0050, 0.15]
+       weak      : noise in [0.1500, 0.5]
+       unreliable: noise in [0.5000, inf]
+
+     Dupire CV selection (real data):
+       SPY: best_approach=gp_smooth_fd_deriv, R²=0.635, sigma=0.071, market_iv=0.173
+       QQQ: best_approach=savgol_fd, R²=0.460, sigma=0.116, market_iv=0.233
+       AAPL: applied SPY winner (gp_smooth_fd_deriv), R²=0.697
+       MSFT: applied SPY winner (gp_smooth_fd_deriv), R²=0.681
+
+  15. REFERENCES & POSITIONING
+  =================================================================
+
+     KEY PRIOR WORK:
+       [1] Feng, Lin, Matlia & Serdarevic (2025).
+           Data-driven Feynman-Kac Discovery with Applications to
+           Prediction and Data Generation.
+           NeurIPS 2025 Workshop on Generative AI in Finance.
+           arXiv:2511.08606
+           --- CLOSEST PRIOR WORK ---
+           Applies stochastic SINDy under the risk-neutral measure to
+           recover the BS BSDE from real AAPL time-series data.
+
+       [2] Gao, Kutz & Font (2025).
+           Mesh-free sparse identification of nonlinear dynamics.
+           arXiv:2505.16058
+           Uses neural network + autograd for PDE discovery on physics
+           PDEs. Our GP-derivative results show kernel methods
+           outperform this neural approach on financial data.
+
+       [3] Forootani et al. (2026).
+           GN-SINDy: Equation discovery via sparse regression on
+           refined analytical gradients.
+           International Journal of Systems Science.
+           Greedy sampling + DNN surrogates for PDE discovery.
+
+       [4] Brunton, Proctor & Kutz (2016). PNAS 113(15).
+           Foundational SINDy reference.
+       [5] Fasel, Kutz, Brunton & Brunton (2022). Proc. R. Soc. A 478.
+           Ensemble-SINDy reference.
+       [6] Raissi, Perdikaris & Karniadakis (2019). J. Comput. Phys. 378.
+           PINN reference.
+
+     POSITIONING vs FENG ET AL. 2025:
+       Feng et al. recover stochastic dynamics (BSDEs) from individual
+       stock-option trajectories using stochastic SINDy. We discover
+       deterministic dynamics (PDEs) from cross-sectional option
+       surfaces, and provide the first systematic comparison of
+       derivative estimation strategies for financial PDE discovery.
+
+       AXIS         | Feng et al. 2025         | This work
+       -------------|--------------------------|------------------------
+       Data         | single-stock trajectories| cross-sectional surfaces
+                    | (real AAPL time series)  | (SPY/QQQ/AAPL/MSFT
+                    |                          |  1,374 contracts)
+       Model class  | stochastic (BSDE)        | deterministic (PDE)
+                    | risk-neutral measure     | Black-Scholes + Dupire
+       Method       | stochastic SINDy         | derivative SINDy with
+                    |                          | 6-method comparison
+       Eval metric  | trajectory likelihood    | R²(clean) — separates
+                    |                          | fit from coefficient acc.
+
+     UNIQUE CONTRIBUTIONS OF THIS WORK:
+       (a) GP-derivative-enhanced SINDy applied to financial option
+           surfaces (no prior application in finance).
+       (b) Systematic comparison of 6 derivative methods for financial
+           PDE discovery with R²(clean) evaluation.
+       (c) Misspecification diagnostic via SINDy spurious-term
+           activation on Merton jump-diffusion data.
+       (d) Dupire equation discovery from cross-sectional option
+           surfaces (Feng et al. work in BSDE framework).
+       (e) The R²(clean) vs R²(noisy) distinction revealing that
+           neural SINDy fit quality and coefficient accuracy diverge.
 
 ========================================================================
