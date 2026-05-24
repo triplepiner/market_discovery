@@ -43,6 +43,7 @@ This work takes a complementary route: deterministic PDE discovery from \emph{cr
 \item \textbf{Real-market discovery.} On $1{,}374$ contracts (SPY/QQQ/AAPL/MSFT, May 2026) we obtain GP-SINDy $R^2$ up to $0.966$ on SPY, with a contribution analysis isolating the dominant terms, and a working IV-smile / term-structure recovery.
 \item \textbf{Misspecification diagnostic.} On synthetic Merton jump-diffusion data, the SINDy $d^2V/dS^2$ coefficient (true value $0$) is identified as $1.905$ --- a positive-control test showing SINDy can flag missing physics.
 \item \textbf{Nonlinear PDE structure via KAN reframing.} A single-layer Kolmogorov--Arnold Network with five learned univariate B-spline activations (one per canonical BS term) visualizes the discovered PDE operator and reveals nonlinear deviations from Black--Scholes on four of five terms on real SPY data --- most prominently the Dollar-Gamma term, consistent with the volatility smile.
+\item \textbf{Unified SINDy-KAN framework.} Composing the two methods --- SINDy for sparse \emph{structure} discovery, KAN for the \emph{operator} on the discovered terms --- yields a minimal $[2,1]$ KAN-Dupire in log-moneyness space whose two activations are individually financially interpretable (drift and local-volatility shape). It improves in-sample $R^2$ by $+0.32$ to $+0.47$ over linear Dupire on all four real tickers, while an honest temporal-split out-of-sample test reveals that the lift is expiration-specific (negative OoS $R^2$), which we report as a substantive negative finding.
 \end{enumerate}
 
 \section{Method}\label{sec:method}
@@ -231,7 +232,42 @@ Edge & Input & Financial name & BS lin $R^2$ & SPY lin $R^2$ & SPY nonlinear? \\
 \end{tabular}
 \end{table}
 
-\textbf{Interpretation.} Four of five edges are nonlinear on SPY; Dollar Delta is the lone exception and is actually \emph{more} linear on SPY ($R^2{=}0.95$) than on synthetic BS ($R^2{=}0.82$) --- the canonical drift term behaves as theory predicts. The nonlinear Dollar-Gamma activation is consistent with the volatility smile expressed as a PDE-level nonlinearity: the diffusion coefficient depends on $S^2\Gamma$ in a way that a constant-$\sigma$ BS operator cannot represent. The nonzero bare-Delta and bare-Gamma activations (which BS theory forces to zero) are consistent with hedging friction, discrete rebalancing, or jump-risk premia. Honest caveat: even on synthetic BS the Discounting edge has lin $R^2{=}0.48$, so the $[5,1]$ KAN does not perfectly recover linearity even when truth is linear; the reported nonlinearities should be read as ``deviations from a noisy BS baseline'' rather than ``proof of'' specific financial phenomena. Symbolic extraction of clean equations from these activations remains open (deferred to a separate manuscript).
+\textbf{Interpretation.} Four of five edges are nonlinear on SPY; Dollar Delta is the lone exception and is actually \emph{more} linear on SPY ($R^2{=}0.95$) than on synthetic BS ($R^2{=}0.82$) --- the canonical drift term behaves as theory predicts. The nonlinear Dollar-Gamma activation is consistent with the volatility smile expressed as a PDE-level nonlinearity: the diffusion coefficient depends on $S^2\Gamma$ in a way that a constant-$\sigma$ BS operator cannot represent. The nonzero bare-Delta and bare-Gamma activations (which BS theory forces to zero) are consistent with hedging friction, discrete rebalancing, or jump-risk premia. Honest caveat: even on synthetic BS the Discounting edge has lin $R^2{=}0.48$, so the $[5,1]$ KAN does not perfectly recover linearity even when truth is linear; the reported nonlinearities should be read as ``deviations from a noisy BS baseline'' rather than ``proof of'' specific financial phenomena.
+
+\subsection{Unified SINDy-KAN: $[2,1]$-KAN-Dupire}\label{sec:sindy-kan}
+
+The $[5,1]$ KAN above operates in the BS coordinate system where library multicollinearity limits interpretability. The natural composition is to first let SINDy identify the active terms, then let a KAN learn the nonlinear operator on those terms alone. In log-moneyness Dupire coordinates SINDy isolates exactly two active terms ($\partial_k C, \partial_{kk}C$), so the minimal interpretable architecture is a $[2,1]$ KAN with two learned univariate activations:
+\[
+\partial_\tau C \;=\; \phi_{\text{drift}}(\partial_k C) \;+\; \phi_{\text{diff}}(\partial_{kk}C).
+\]
+Under constant-coefficient Dupire $\phi_{\text{drift}}$ is a straight line of slope $-(r{-}q{-}\tfrac12\sigma^2)$ and $\phi_{\text{diff}}$ is a straight line of slope $\tfrac12\sigma^2$ --- so the \emph{shape} of $\phi_{\text{diff}}$ on real data is a direct, parameter-free fingerprint of the local-volatility structure.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{$[2,1]$-KAN-Dupire vs.\ linear Dupire on real chains (SVI-smoothed surface, analytical-$\theta$ target). Source: \texttt{sindy\_kan\_dupire\_real.csv}.}
+\label{tab:sindy-kan}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Ticker & $n$ opts & Linear $R^2$ & $[2,1]$ KAN $R^2$ & OoS $R^2$ ($\tau{\ge}.5$) & drift lin $R^2$ & diff lin $R^2$ & $\sigma_{\text{loc}}$ med \\
+\midrule
+SPY  & 542 & 0.439 & \textbf{0.795} & $-2.07$ & 0.681 & 0.829 & 0.169 \\
+QQQ  & 416 & 0.401 & \textbf{0.868} & $-2.57$ & 0.677 & 0.885 & 0.261 \\
+AAPL & 244 & 0.432 & \textbf{0.893} & $-2.65$ & 0.676 & 0.925 & 0.295 \\
+MSFT & 172 & 0.604 & \textbf{0.925} & $-1.11$ & 0.673 & 0.958 & 0.441 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/sindy_kan_activations.pdf}
+\caption{$[2,1]$-KAN-Dupire activation functions. Left: $\phi_{\text{drift}}(\partial_k C)$. Right: $\phi_{\text{diff}}(\partial_{kk}C)$. Blue: synthetic constant-$\sigma$ Dupire (linear, as theory predicts). Green: synthetic smile $\sigma^2(k){=}0.04{+}0.10 k^2$ (mild curvature on the diffusion edge). Red: real SPY (the discovered nonlinear operator).}
+\label{fig:sindy-kan}
+\end{figure}
+
+In-sample $R^2$ jumps by $+0.32$ to $+0.47$ over the linear Dupire baseline on every ticker, with both edges showing genuine nonlinearity on real data (linear-fit $R^2$ of the diffusion edge is $0.83$--$0.96$ across tickers, vs.\ $0.9996$ on synthetic smile data, confirming the real-data activation is more strongly curved than even a parabolic-smile baseline). The $\sigma_{\text{loc}}$ medians extracted from the inverted diffusion activations are of the same order as market ATM IV but biased low on the index tickers.
+
+\textbf{Honest negative finding.} An out-of-sample test that trains on short maturities ($\tau{<}0.5$ yr) and evaluates on long maturities ($\tau{\ge}0.5$ yr) produces strongly negative $R^2$ across all four tickers --- the $[2,1]$ KAN's learned nonlinearity does \emph{not} generalize across the term-structure dimension. This is consistent with non-stationarity of the local-vol surface in $\tau$ that a single global operator cannot capture, and is in itself an informative finding: the in-sample lift of KAN-Dupire over linear Dupire reflects expiration-specific shape, not a stationary operator. Closing this gap (term-structure-aware operators, or per-maturity windowed KAN-Dupire) is the central open problem for the follow-up manuscript.
 
 \section{Related Work}\label{sec:related}
 

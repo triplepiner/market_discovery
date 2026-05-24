@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  24 MAY 2026 15:57
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  24 MAY 2026 16:39
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -612,32 +612,27 @@ r/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/usr/local/t
 exlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/usr/local/texliv
 e/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/local/texlive/2026bas
 ic/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
-Underfull \hbox (badness 10000) in paragraph at lines 66--66
+Underfull \hbox (badness 10000) in paragraph at lines 67--67
 []\T1/lmr/m/n/10 (+20) Table 1: |$\OML/lmm/m/it/10 R[]\OT1/lmr/m/n/10 (+20) ([]
 )$ \T1/lmr/m/n/10 (+20) by deriva-tive method and noise level (syn-thetic BS
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 66--66
+Underfull \hbox (badness 10000) in paragraph at lines 67--67
 \T1/lmr/m/n/10 (+20) call). Sources: \T1/lmtt/m/n/10 all_methods_noise_comparis
 on_v2.csv\T1/lmr/m/n/10 (+20) , \T1/lmtt/m/n/10 gp_noise_robustness.csv\T1/lmr/
 m/n/10 (+20) ,
  []
 
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-<figures/fig2_noise_robustness.pdf, id=119, 568.19878pt x 353.24911pt>
+[2{/usr/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}]
+<figures/fig2_noise_robustness.pdf, id=141, 568.19878pt x 353.24911pt>
 File: figures/fig2_noise_robustness.pdf Graphic file (type pdf)
 <use figures/fig2_noise_robustness.pdf>
 Package pdftex.def Info: figures/fig2_noise_robustness.pdf  used on input line 
-84.
+85.
 (pdftex.def)             Requested size: 399.29463pt x 248.2429pt.
 
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-[2{/usr/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}]
-Underfull \hbox (badness 2790) in paragraph at lines 95--95
+Underfull \hbox (badness 2790) in paragraph at lines 96--96
 []\T1/lmr/m/n/10 (+20) Table 2: |PINN vari-ants on syn-thetic BS sur-faces. Sou
 rce: \T1/lmtt/m/n/10 pinn_results_{call,put}.csv\T1/lmr/m/n/10 (+20) ,
  []
@@ -645,96 +640,110 @@ rce: \T1/lmtt/m/n/10 pinn_results_{call,put}.csv\T1/lmr/m/n/10 (+20) ,
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/fig3_pinn_comparison.pdf, id=139, 662.97731pt x 304.19461pt>
+<figures/fig3_pinn_comparison.pdf, id=143, 662.97731pt x 304.19461pt>
 File: figures/fig3_pinn_comparison.pdf Graphic file (type pdf)
 <use figures/fig3_pinn_comparison.pdf>
 Package pdftex.def Info: figures/fig3_pinn_comparison.pdf  used on input line 1
-14.
+15.
 (pdftex.def)             Requested size: 399.29463pt x 183.20976pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-<figures/fig6_merton_misspecification.pdf, id=142, 859.79219pt x 337.15959pt>
+[3 <./figures/fig2_noise_robustness.pdf>]
+<figures/fig6_merton_misspecification.pdf, id=232, 859.79219pt x 337.15959pt>
 File: figures/fig6_merton_misspecification.pdf Graphic file (type pdf)
 <use figures/fig6_merton_misspecification.pdf>
 Package pdftex.def Info: figures/fig6_merton_misspecification.pdf  used on inpu
-t line 142.
+t line 143.
 (pdftex.def)             Requested size: 366.40834pt x 143.68448pt.
 
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-[3 <./figures/fig2_noise_robustness.pdf>]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 171--171
-[]\T1/lmr/m/n/10 (+20) Table 5: |SPY con-tri-bu-tion anal-y-sis (frac-tion of $
-\OMS/lmsy/m/n/10 j\OML/lmm/m/it/10 @[]V\OMS/lmsy/m/n/10 j$ \T1/lmr/m/n/10 (+20)
- ex-plained per term). Source:
- []
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 [4 <./figures/fig3_pinn_comparison.pdf>]
-<figures/fig4_real_data_discovery.pdf, id=313, 996.0969pt x 313.0665pt>
+Underfull \hbox (badness 10000) in paragraph at lines 172--172
+[]\T1/lmr/m/n/10 (+20) Table 5: |SPY con-tri-bu-tion anal-y-sis (frac-tion of $
+\OMS/lmsy/m/n/10 j\OML/lmm/m/it/10 @[]V\OMS/lmsy/m/n/10 j$ \T1/lmr/m/n/10 (+20)
+ ex-plained per term). Source:
+ []
+
+[5 <./figures/fig6_merton_misspecification.pdf>]
+<figures/fig4_real_data_discovery.pdf, id=387, 996.0969pt x 313.0665pt>
 File: figures/fig4_real_data_discovery.pdf Graphic file (type pdf)
 <use figures/fig4_real_data_discovery.pdf>
 Package pdftex.def Info: figures/fig4_real_data_discovery.pdf  used on input li
-ne 192.
+ne 193.
 (pdftex.def)             Requested size: 399.29463pt x 125.49188pt.
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-<figures/local_vol_direct_vs_market_iv_SPY.pdf, id=314, 1000.66223pt x 333.6953
+<figures/local_vol_direct_vs_market_iv_SPY.pdf, id=388, 1000.66223pt x 333.6953
 3pt>
 File: figures/local_vol_direct_vs_market_iv_SPY.pdf Graphic file (type pdf)
 <use figures/local_vol_direct_vs_market_iv_SPY.pdf>
 Package pdftex.def Info: figures/local_vol_direct_vs_market_iv_SPY.pdf  used on
- input line 199.
+ input line 200.
 (pdftex.def)             Requested size: 469.75502pt x 156.64842pt.
+
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[5 <./figures/fig6_merton_misspecification.pdf>]
-<figures/kan_activations_bs_vs_spy.pdf, id=387, 1291.06021pt x 266.61757pt>
+<figures/kan_activations_bs_vs_spy.pdf, id=390, 1291.06021pt x 266.61757pt>
 File: figures/kan_activations_bs_vs_spy.pdf Graphic file (type pdf)
 <use figures/kan_activations_bs_vs_spy.pdf>
 Package pdftex.def Info: figures/kan_activations_bs_vs_spy.pdf  used on input l
-ine 212.
+ine 213.
 (pdftex.def)             Requested size: 469.75502pt x 97.00743pt.
+
+LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[6] [7 <./figures/fig4_real_data_discovery.pdf> <./figures/local_vol_direct_vs_
-market_iv_SPY.pdf>] (./main.bbl [8 <./figures/kan_activations_bs_vs_spy.pdf>])
-[9]
+[6 <./figures/fig4_real_data_discovery.pdf>]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 237.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 237.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+<figures/sindy_kan_activations.pdf, id=489, 786.15643pt x 312.72899pt>
+File: figures/sindy_kan_activations.pdf Graphic file (type pdf)
+<use figures/sindy_kan_activations.pdf>
+Package pdftex.def Info: figures/sindy_kan_activations.pdf  used on input line 
+263.
+(pdftex.def)             Requested size: 469.75502pt x 186.87056pt.
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[7 <./figures/local_vol_direct_vs_market_iv_SPY.pdf> <./figures/kan_activations
+_bs_vs_spy.pdf>] [8] (./main.bbl [9 <./figures/sindy_kan_activations.pdf>])
+[10]
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <14.4> on input line 253.
+(Font)              <14.4> on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 253.
+(hyperref)                removing `math shift' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\times' on input line 253.
+(hyperref)                removing `\times' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 253.
+(hyperref)                removing `math shift' on input line 289.
 
-<figures/fig5_multicollinearity.pdf, id=689, 606.903pt x 354.37846pt>
+<figures/fig5_multicollinearity.pdf, id=769, 606.903pt x 354.37846pt>
 File: figures/fig5_multicollinearity.pdf Graphic file (type pdf)
 <use figures/fig5_multicollinearity.pdf>
 Package pdftex.def Info: figures/fig5_multicollinearity.pdf  used on input line
- 318.
+ 354.
 (pdftex.def)             Requested size: 328.82707pt x 192.01039pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
@@ -742,7 +751,7 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[10
+[11
 
 ]
 
@@ -750,59 +759,59 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 377.
+(hyperref)                removing `math shift' on input line 413.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\tau' on input line 377.
+(hyperref)                removing `\tau' on input line 413.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 377.
+(hyperref)                removing `math shift' on input line 413.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 377.
+(hyperref)                removing `math shift' on input line 413.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\theta' on input line 377.
+(hyperref)                removing `\theta' on input line 413.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 377.
+(hyperref)                removing `math shift' on input line 413.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Overfull \hbox (7.89882pt too wide) in paragraph at lines 403--404
+Overfull \hbox (7.89882pt too wide) in paragraph at lines 439--440
 \T1/lmr/m/n/10 (-20) The sin-gle method-olog-i-cal change --- re-plac-ing the F
 D $\OML/lmm/m/it/10 @[]C$ \T1/lmr/m/n/10 (-20) across $\OMS/lmsy/m/n/10 ^^T \OT
 1/lmr/m/n/10 (-20) 10$ \T1/lmr/m/n/10 (-20) dis-crete ex-pi-ra-tions with $\OML
 /lmm/m/it/10 ^^R[][][] \OT1/lmr/m/n/10 (-20) +
  []
 
-[11 <./figures/fig5_multicollinearity.pdf>]
+[12 <./figures/fig5_multicollinearity.pdf>]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[12] [13] (./main.aux)
+[13] [14] (./main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: E78422B64CF3C2B329525AE65C984CB3;3492.
+(rerunfilecheck)             Checksum: D218C107731E1A00509041C1A7967A2A;3731.
  ) 
 Here is how much of TeX's memory you used:
- 15431 strings out of 469006
- 245246 string characters out of 5454813
- 706360 words of memory out of 5000000
- 43493 multiletter control sequences out of 15000+600000
- 764516 words of font info for 271 fonts, out of 8000000 for 9000
+ 15461 strings out of 469006
+ 245885 string characters out of 5454813
+ 705930 words of memory out of 5000000
+ 43508 multiletter control sequences out of 15000+600000
+ 767895 words of font info for 277 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
- 75i,13n,79p,3657b,606s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,13n,79p,3657b,598s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></u
 sr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/lo
 cal/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx8.pfb></usr/local/te
@@ -830,10 +839,10 @@ m/lmsy7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmsy
 8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmsy9.pfb>
 </usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt10.pfb></usr
 /local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt9.pfb>
-Output written on main.pdf (13 pages, 747617 bytes).
+Output written on main.pdf (14 pages, 778762 bytes).
 PDF statistics:
- 926 PDF objects out of 1000 (max. 8388607)
- 445 compressed objects within 5 object streams
- 94 named destinations out of 1000 (max. 500000)
- 74932 words of extra memory for PDF output out of 89155 (max. 10000000)
+ 1006 PDF objects out of 1200 (max. 8388607)
+ 471 compressed objects within 5 object streams
+ 99 named destinations out of 1000 (max. 500000)
+ 76993 words of extra memory for PDF output out of 89155 (max. 10000000)
 
