@@ -64,9 +64,6 @@
 \bibstyle{abbrv}
 \bibdata{references}
 \bibcite{blackscholes1973}{{1}{}{{}}{{}}}
-\bibcite{brunton2016sindy}{{2}{}{{}}{{}}}
-\bibcite{champion2019dataautoencoder}{{3}{}{{}}{{}}}
-\bibcite{desilva2020pysindy}{{4}{}{{}}{{}}}
 \@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Per-ticker results on real option chains. Sources: \texttt  {real\_data\_summary.csv}, \texttt  {gp\_on\_real\_data.csv}, \texttt  {gp\_kernel\_comparison.csv}.}}{6}{table.caption.11}\protected@file@percent }
 \newlabel{tab:real}{{4}{6}{Per-ticker results on real option chains. Sources: \texttt {real\_data\_summary.csv}, \texttt {gp\_on\_real\_data.csv}, \texttt {gp\_kernel\_comparison.csv}}{table.caption.11}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces SPY contribution analysis (fraction of $|\partial _t V|$ explained per term). Source: \texttt  {term\_contributions\_real.csv}.}}{6}{table.caption.13}\protected@file@percent }
@@ -75,16 +72,20 @@
 \newlabel{sec:discuss}{{5}{6}{Discussion \& Conclusion}{section.5}{}}
 \@writefile{toc}{\contentsline {paragraph}{Strengths.}{6}{section*.18}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Limitations.}{6}{section*.19}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Conclusion.}{6}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future work: nonlinear PDE discovery with KANs.}{6}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Conclusion.}{6}{section*.21}\protected@file@percent }
+\bibcite{brunton2016sindy}{{2}{}{{}}{{}}}
+\bibcite{champion2019dataautoencoder}{{3}{}{{}}{{}}}
+\bibcite{desilva2020pysindy}{{4}{}{{}}{{}}}
 \bibcite{dhiman2023option}{{5}{}{{}}{{}}}
 \bibcite{dupire1994pricing}{{6}{}{{}}{{}}}
 \bibcite{fasel2022ensemble}{{7}{}{{}}{{}}}
-\bibcite{feng2025feynmankac}{{8}{}{{}}{{}}}
-\bibcite{forootani2026gnsindy}{{9}{}{{}}{{}}}
 \@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Real-data discovery on SPY (top): GP fits the price surface, the discovered PDE residual is small, and IV-regime stratification recovers the smile and term structure.}}{7}{figure.caption.16}\protected@file@percent }
 \newlabel{fig:real}{{4}{7}{Real-data discovery on SPY (top): GP fits the price surface, the discovered PDE residual is small, and IV-regime stratification recovers the smile and term structure}{figure.caption.16}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Direct Dupire local volatility on SPY using analytical $\theta $. Left: SVI-smoothed market IV surface. Center: direct Dupire formula $\sigma ^2_{\text  {loc}}{=}2(\theta +(r{-}q)K\partial _K C+qC)/(K^2\partial _{KK}C)$ applied pointwise, returning finite positive $\sigma _{\text  {loc}}$ on 89.7\% of grid pixels. Right: per-pixel scatter (corr.\ $=0.37$). Both surfaces show the same monotone-in-$k$ structure (higher vol at downside strikes), with the direct formula systematically inflating short-$\tau $ pixels where the smile is sharper than a single $\sigma _{\text  {imp}}$ implies. The analogous v2 calculation (with FD-$\partial _\tau C$ instead of analytical $\theta $) collapses to a near-flat surface, demonstrating that the $\tau $-derivative target is the dominant noise source in cross-sectional Dupire discovery.}}{7}{figure.caption.17}\protected@file@percent }
 \newlabel{fig:direct-dupire}{{5}{7}{Direct Dupire local volatility on SPY using analytical $\theta $. Left: SVI-smoothed market IV surface. Center: direct Dupire formula $\sigma ^2_{\text {loc}}{=}2(\theta +(r{-}q)K\partial _K C+qC)/(K^2\partial _{KK}C)$ applied pointwise, returning finite positive $\sigma _{\text {loc}}$ on 89.7\% of grid pixels. Right: per-pixel scatter (corr.\ $=0.37$). Both surfaces show the same monotone-in-$k$ structure (higher vol at downside strikes), with the direct formula systematically inflating short-$\tau $ pixels where the smile is sharper than a single $\sigma _{\text {imp}}$ implies. The analogous v2 calculation (with FD-$\partial _\tau C$ instead of analytical $\theta $) collapses to a near-flat surface, demonstrating that the $\tau $-derivative target is the dominant noise source in cross-sectional Dupire discovery}{figure.caption.17}{}}
+\bibcite{feng2025feynmankac}{{8}{}{{}}{{}}}
+\bibcite{forootani2026gnsindy}{{9}{}{{}}{{}}}
 \bibcite{gao2025meshfree}{{10}{}{{}}{{}}}
 \bibcite{gatheral2014arbitrage}{{11}{}{{}}{{}}}
 \bibcite{heston1993closed}{{12}{}{{}}{{}}}
@@ -100,39 +101,39 @@
 \bibcite{sirignano2018dgm}{{22}{}{{}}{{}}}
 \@writefile{toc}{\contentsline {section}{\numberline {A}Full noise comparison (all methods $\times $ 13 noise levels)}{9}{appendix.A}\protected@file@percent }
 \newlabel{app:noise}{{A}{9}{Full noise comparison (all methods $\times $ 13 noise levels)}{appendix.A}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Full $R^2(\text  {clean})$ table by method and noise. Adaptive uses the GP/SavGol/Weak hand-off described in \texttt  {final\_summary.txt} \S  5.}}{9}{table.caption.23}\protected@file@percent }
-\newlabel{tab:noise-full}{{6}{9}{Full $R^2(\text {clean})$ table by method and noise. Adaptive uses the GP/SavGol/Weak hand-off described in \texttt {final\_summary.txt} \S 5}{table.caption.23}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Full $R^2(\text  {clean})$ table by method and noise. Adaptive uses the GP/SavGol/Weak hand-off described in \texttt  {final\_summary.txt} \S  5.}}{9}{table.caption.24}\protected@file@percent }
+\newlabel{tab:noise-full}{{6}{9}{Full $R^2(\text {clean})$ table by method and noise. Adaptive uses the GP/SavGol/Weak hand-off described in \texttt {final\_summary.txt} \S 5}{table.caption.24}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {B}Multicollinearity diagnostics}{9}{appendix.B}\protected@file@percent }
 \newlabel{app:cond}{{B}{9}{Multicollinearity diagnostics}{appendix.B}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Standardization collapses the condition number on both synthetic and real libraries. Source: \texttt  {standardization\_comparison.csv}.}}{9}{table.caption.24}\protected@file@percent }
-\newlabel{tab:cond}{{7}{9}{Standardization collapses the condition number on both synthetic and real libraries. Source: \texttt {standardization\_comparison.csv}}{table.caption.24}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Sparse-regression diagnostics on the synthetic BS library. Source: \texttt  {ensemble\_sindy.csv}, \texttt  {elastic\_net.csv}, \texttt  {pca\_sindy.csv}.}}{9}{table.caption.25}\protected@file@percent }
-\newlabel{tab:diag}{{8}{9}{Sparse-regression diagnostics on the synthetic BS library. Source: \texttt {ensemble\_sindy.csv}, \texttt {elastic\_net.csv}, \texttt {pca\_sindy.csv}}{table.caption.25}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Standardization collapses the condition number on both synthetic and real libraries. Source: \texttt  {standardization\_comparison.csv}.}}{9}{table.caption.25}\protected@file@percent }
+\newlabel{tab:cond}{{7}{9}{Standardization collapses the condition number on both synthetic and real libraries. Source: \texttt {standardization\_comparison.csv}}{table.caption.25}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Sparse-regression diagnostics on the synthetic BS library. Source: \texttt  {ensemble\_sindy.csv}, \texttt  {elastic\_net.csv}, \texttt  {pca\_sindy.csv}.}}{9}{table.caption.26}\protected@file@percent }
+\newlabel{tab:diag}{{8}{9}{Sparse-regression diagnostics on the synthetic BS library. Source: \texttt {ensemble\_sindy.csv}, \texttt {elastic\_net.csv}, \texttt {pca\_sindy.csv}}{table.caption.26}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {C}Heston variance slicing}{9}{appendix.C}\protected@file@percent }
 \newlabel{app:heston}{{C}{9}{Heston variance slicing}{appendix.C}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Library multicollinearity. Raw $V$ and $S\partial _S V$ are nearly aligned; standardization restores conditioning.}}{10}{figure.caption.26}\protected@file@percent }
-\newlabel{fig:cond}{{6}{10}{Library multicollinearity. Raw $V$ and $S\partial _S V$ are nearly aligned; standardization restores conditioning}{figure.caption.26}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Heston variance slicing: per-slice SINDy diffusion coefficient vs.\ $\sigma ^2/2$ ground truth. Source: \texttt  {heston\_variance\_slicing.csv}.}}{10}{table.caption.27}\protected@file@percent }
-\newlabel{tab:heston}{{9}{10}{Heston variance slicing: per-slice SINDy diffusion coefficient vs.\ $\sigma ^2/2$ ground truth. Source: \texttt {heston\_variance\_slicing.csv}}{table.caption.27}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Library multicollinearity. Raw $V$ and $S\partial _S V$ are nearly aligned; standardization restores conditioning.}}{10}{figure.caption.27}\protected@file@percent }
+\newlabel{fig:cond}{{6}{10}{Library multicollinearity. Raw $V$ and $S\partial _S V$ are nearly aligned; standardization restores conditioning}{figure.caption.27}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Heston variance slicing: per-slice SINDy diffusion coefficient vs.\ $\sigma ^2/2$ ground truth. Source: \texttt  {heston\_variance\_slicing.csv}.}}{10}{table.caption.28}\protected@file@percent }
+\newlabel{tab:heston}{{9}{10}{Heston variance slicing: per-slice SINDy diffusion coefficient vs.\ $\sigma ^2/2$ ground truth. Source: \texttt {heston\_variance\_slicing.csv}}{table.caption.28}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {D}Per-ticker contribution analysis}{10}{appendix.D}\protected@file@percent }
 \newlabel{app:contrib}{{D}{10}{Per-ticker contribution analysis}{appendix.D}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fraction of $|\partial _t V|$ explained per term, per ticker. Source: \texttt  {term\_contributions\_real.csv}.}}{10}{table.caption.28}\protected@file@percent }
-\newlabel{tab:contrib-all}{{10}{10}{Fraction of $|\partial _t V|$ explained per term, per ticker. Source: \texttt {term\_contributions\_real.csv}}{table.caption.28}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fraction of $|\partial _t V|$ explained per term, per ticker. Source: \texttt  {term\_contributions\_real.csv}.}}{10}{table.caption.29}\protected@file@percent }
+\newlabel{tab:contrib-all}{{10}{10}{Fraction of $|\partial _t V|$ explained per term, per ticker. Source: \texttt {term\_contributions\_real.csv}}{table.caption.29}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {E}GP kernel selection per ticker}{10}{appendix.E}\protected@file@percent }
 \newlabel{app:kernels}{{E}{10}{GP kernel selection per ticker}{appendix.E}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {F}$\tau $-derivative fix: before vs.\ after analytical $\theta $}{10}{appendix.F}\protected@file@percent }
 \newlabel{app:tau-fix}{{F}{10}{$\tau $-derivative fix: before vs.\ after analytical $\theta $}{appendix.F}{}}
 \providecommand\NAT@force@numbers{}\NAT@force@numbers
-\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces RBF vs.\ Matern-3/2 GP-SINDy $R^2$ per ticker. Source: \texttt  {gp\_kernel\_comparison.csv}.}}{11}{table.caption.29}\protected@file@percent }
-\newlabel{tab:kernels}{{11}{11}{RBF vs.\ Matern-3/2 GP-SINDy $R^2$ per ticker. Source: \texttt {gp\_kernel\_comparison.csv}}{table.caption.29}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Real-data Dupire results before/after replacing FD $\partial _\tau C$ with analytical Black--Scholes $\theta $ evaluated pointwise from each grid point's own SVI-implied $\sigma _{\text  {imp}}$. Sources: \texttt  {improved\_real\_pipeline.csv} (v2), \texttt  {v4\_analytical\_theta\_results.csv} (v4), \texttt  {v5\_summary.csv} (windowed/per-expiration).}}{11}{table.caption.30}\protected@file@percent }
-\newlabel{tab:tau-fix}{{12}{11}{Real-data Dupire results before/after replacing FD $\partial _\tau C$ with analytical Black--Scholes $\theta $ evaluated pointwise from each grid point's own SVI-implied $\sigma _{\text {imp}}$. Sources: \texttt {improved\_real\_pipeline.csv} (v2), \texttt {v4\_analytical\_theta\_results.csv} (v4), \texttt {v5\_summary.csv} (windowed/per-expiration)}{table.caption.30}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces RBF vs.\ Matern-3/2 GP-SINDy $R^2$ per ticker. Source: \texttt  {gp\_kernel\_comparison.csv}.}}{11}{table.caption.30}\protected@file@percent }
+\newlabel{tab:kernels}{{11}{11}{RBF vs.\ Matern-3/2 GP-SINDy $R^2$ per ticker. Source: \texttt {gp\_kernel\_comparison.csv}}{table.caption.30}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Real-data Dupire results before/after replacing FD $\partial _\tau C$ with analytical Black--Scholes $\theta $ evaluated pointwise from each grid point's own SVI-implied $\sigma _{\text  {imp}}$. Sources: \texttt  {improved\_real\_pipeline.csv} (v2), \texttt  {v4\_analytical\_theta\_results.csv} (v4), \texttt  {v5\_summary.csv} (windowed/per-expiration).}}{11}{table.caption.31}\protected@file@percent }
+\newlabel{tab:tau-fix}{{12}{11}{Real-data Dupire results before/after replacing FD $\partial _\tau C$ with analytical Black--Scholes $\theta $ evaluated pointwise from each grid point's own SVI-implied $\sigma _{\text {imp}}$. Sources: \texttt {improved\_real\_pipeline.csv} (v2), \texttt {v4\_analytical\_theta\_results.csv} (v4), \texttt {v5\_summary.csv} (windowed/per-expiration)}{table.caption.31}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {G}Dupire local-volatility results}{11}{appendix.G}\protected@file@percent }
 \newlabel{app:dupire}{{G}{11}{Dupire local-volatility results}{appendix.G}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Dupire $R^2$ per ticker, FD vs.\ GP. Source: \texttt  {gp\_dupire\_real\_comparison.csv}.}}{11}{table.caption.31}\protected@file@percent }
-\newlabel{tab:dupire}{{13}{11}{Dupire $R^2$ per ticker, FD vs.\ GP. Source: \texttt {gp\_dupire\_real\_comparison.csv}}{table.caption.31}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Dupire $R^2$ per ticker, FD vs.\ GP. Source: \texttt  {gp\_dupire\_real\_comparison.csv}.}}{11}{table.caption.32}\protected@file@percent }
+\newlabel{tab:dupire}{{13}{11}{Dupire $R^2$ per ticker, FD vs.\ GP. Source: \texttt {gp\_dupire\_real\_comparison.csv}}{table.caption.32}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {H}Computation costs}{11}{appendix.H}\protected@file@percent }
 \newlabel{app:cost}{{H}{11}{Computation costs}{appendix.H}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Wall-clock per stage (s). Source: \texttt  {computation\_costs.csv}.}}{12}{table.caption.32}\protected@file@percent }
-\newlabel{tab:cost}{{14}{12}{Wall-clock per stage (s). Source: \texttt {computation\_costs.csv}}{table.caption.32}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Wall-clock per stage (s). Source: \texttt  {computation\_costs.csv}.}}{12}{table.caption.33}\protected@file@percent }
+\newlabel{tab:cost}{{14}{12}{Wall-clock per stage (s). Source: \texttt {computation\_costs.csv}}{table.caption.33}{}}
 \gdef \@abspage@last{12}

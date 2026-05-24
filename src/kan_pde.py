@@ -721,6 +721,9 @@ def _extract_real_inputs_target(per_ticker_entry: dict[str, Any],
             S0 = float(od['S0'])
             r = float(od['r'])
             df = od['option_df']
+            # Accept either 'mid' or 'mid_price' as the price column.
+            if 'mid' not in df.columns and 'mid_price' in df.columns:
+                df = df.rename(columns={'mid_price': 'mid'})
             taus_all = np.sort(np.unique(df['tau'].values))
             taus_all = taus_all[(taus_all > 1e-3) & (taus_all < 5.0)]
             # Keep only expirations with at least 8 strikes covering S0.
@@ -851,6 +854,573 @@ def kan_pde_on_real_data(per_ticker_results: dict[str, Any],
             row.update({'kan_train_r2': np.nan, 'kan_test_r2': np.nan,
                         'n_active_edges': 0, 'symbolic_expression': '',
                         'sindy_r2': np.nan, 'error': str(exc)[:100]})
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Module 5: KAN-Dupire
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Module 6: Tiny-KAN with clean symbolic extraction (Fix 1, 4, 5, 6)
+# ---------------------------------------------------------------------------
+
+
+def _total_variation_penalty(model: MinimalKAN, n_samples: int = 32
+                              ) -> torch.Tensor:
+    """Sum_i sum_e |Δ phi_e(x)| over a dense 1D sweep -- penalises wiggly edges.
+
+    For a [5,1] (no hidden) or [5,k,1] KAN we sample the *univariate* edge
+    activation on a uniform grid in the canonical input range [-1, 1] and
+    sum the absolute first differences. A purely-linear edge therefore costs
+    ``|slope| * 2``; a wiggly spline costs much more. Acts as a Sobolev-style
+    smoothness regularizer on top of L1 and entropy.
+    """
+    xs = torch.linspace(-1.0, 1.0, n_samples)
+    tv = torch.tensor(0.0)
+    for e in model.edges:
+        y = e(xs)
+        tv = tv + (y[1:] - y[:-1]).abs().sum()
+    return tv
+
+
+def train_kan_tiny(inputs, target, layer_sizes: list[int] = [5, 1],
+                    n_grid: int = 5, spline_order: int = 3,
+                    n_epochs: int = 5000, lr: float = 1e-3,
+                    lambda_l1: float = 0.01,
+                    lambda_complexity: float = 0.01,
+                    test_split: float = 0.2, seed: int = 42,
+                    verbose: bool = False) -> dict[str, Any]:
+    """Train a *tiny* MinimalKAN with an additional total-variation penalty.
+
+    Designed for clean symbolic extraction: uses ``base_fn='identity'`` so a
+    linear activation is the natural rest-state of every edge. The
+    total-variation penalty (``lambda_complexity``) discourages spline wiggles,
+    pushing edges toward simple primitives (linear / quadratic / zero).
+
+    Returns a dict with the same keys as :func:`train_kan_pde` plus
+    ``per_edge_max_abs`` (the max |phi_e(x)| over a 1D sweep, used as a
+    saturation diagnostic).
+    """
+    set_all_seeds(seed)
+
+    if not isinstance(inputs, torch.Tensor):
+        inputs = torch.tensor(np.asarray(inputs), dtype=torch.float32)
+    else:
+        inputs = inputs.float()
+    if not isinstance(target, torch.Tensor):
+        target = torch.tensor(np.asarray(target), dtype=torch.float32)
+    else:
+        target = target.float()
+    if target.ndim > 1:
+        target = target.squeeze()
+
+    n_in = inputs.shape[1]
+    if layer_sizes[0] != n_in:
+        layer_sizes = [n_in] + list(layer_sizes[1:])
+
+    in_min = inputs.min(dim=0).values
+    in_max = inputs.max(dim=0).values
+    in_range = (in_max - in_min).clamp(min=1e-8)
+    in_center = (in_max + in_min) / 2.0
+    inputs_norm = 2.0 * (inputs - in_center) / in_range
+
+    n = inputs_norm.shape[0]
+    g = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(n, generator=g)
+    n_test = max(1, int(n * test_split))
+    test_idx = perm[:n_test]
+    train_idx = perm[n_test:]
+
+    x_train, x_test = inputs_norm[train_idx], inputs_norm[test_idx]
+    y_train, y_test = target[train_idx], target[test_idx]
+
+    y_mean = y_train.mean()
+    y_std = y_train.std().clamp(min=1e-8)
+    y_train_n = (y_train - y_mean) / y_std
+    y_test_n = (y_test - y_mean) / y_std
+
+    # base_fn='identity' makes the rest-state of every edge a pure line;
+    # spline coefficients only fire when the data requires nonlinearity.
+    model = MinimalKAN(layer_sizes=layer_sizes, n_grid=n_grid,
+                        spline_order=spline_order, base_fn='identity',
+                        input_extent=(-1.0, 1.0))
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+
+    loss_history: list[float] = []
+    for epoch in range(n_epochs):
+        opt.zero_grad()
+        pred = model(x_train)
+        mse = F.mse_loss(pred, y_train_n)
+        reg = model.regularization_loss(lambda_l1=lambda_l1, lambda_entropy=0.0)
+        tv = _total_variation_penalty(model)
+        loss = mse + reg + lambda_complexity * tv
+        loss.backward()
+        opt.step()
+        loss_history.append(float(loss.item()))
+        if verbose and epoch % 500 == 0:
+            logger.info(f"epoch {epoch}: loss={loss.item():.6f} mse={mse.item():.6f}")
+
+    model.eval()
+    with torch.no_grad():
+        pred_train = model(x_train) * y_std + y_mean
+        pred_test = model(x_test) * y_std + y_mean
+
+        def _r2(y, p):
+            ss_res = ((y - p) ** 2).sum().item()
+            ss_tot = ((y - y.mean()) ** 2).sum().item()
+            return 1.0 - ss_res / max(ss_tot, 1e-30)
+
+        train_r2 = _r2(y_train, pred_train)
+        test_r2 = _r2(y_test, pred_test)
+
+        xs = torch.linspace(-1.0, 1.0, 64)
+        per_edge_max_abs = [float(e(xs).abs().max().item()) for e in model.edges]
+
+    active_mask = model.active_edges_mask(threshold=0.01)
+
+    return {
+        'model': model,
+        'train_r2': float(train_r2),
+        'test_r2': float(test_r2),
+        'loss_history': loss_history,
+        'active_edges': active_mask,
+        'n_active_edges': int(active_mask.sum().item()),
+        'n_total_edges': int(len(model.edges)),
+        'per_edge_max_abs': per_edge_max_abs,
+        'input_min': in_min.numpy(),
+        'input_max': in_max.numpy(),
+        'y_mean': float(y_mean.item()),
+        'y_std': float(y_std.item()),
+        'layer_sizes': list(layer_sizes),
+    }
+
+
+# Primitives for clean symbolic fitting: linear, quadratic, zero, sqrt, log,
+# exp, constant.
+def _bic(n: int, k: int, ss_res: float) -> float:
+    """Bayesian Information Criterion for least-squares (Gaussian residuals)."""
+    if ss_res <= 0:
+        ss_res = 1e-30
+    return n * math.log(ss_res / max(n, 1)) + k * math.log(max(n, 2))
+
+
+def fit_symbolic_primitive(x_samples: np.ndarray, y_samples: np.ndarray
+                            ) -> tuple[str, dict[str, float], float]:
+    """Fit a small primitive library to (x, y); return the best by BIC.
+
+    Candidates
+    ----------
+    - linear:    a*x + b               (k=2)
+    - quadratic: a*x^2 + b*x + c       (k=3)
+    - zero:      0                     (k=0)
+    - sqrt:      a*sqrt(|x|) + b       (k=2)
+    - log:       a*log(|x| + eps) + b  (k=2)
+    - exp:       a*exp(b*x) + c        (k=3)
+    - constant:  a                     (k=1)
+
+    Returns
+    -------
+    (best_primitive_name, params_dict, fit_r2)
+    """
+    x = np.asarray(x_samples, dtype=float)
+    y = np.asarray(y_samples, dtype=float)
+    n = len(y)
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+
+    def r2(pred):
+        ss_res = float(np.sum((y - pred) ** 2))
+        return 1.0 - ss_res / max(ss_tot, 1e-30), ss_res
+
+    candidates: list[tuple[str, dict[str, float], float, float, int]] = []
+
+    # zero
+    r2_v, ss = r2(np.zeros_like(y))
+    candidates.append(('zero', {}, r2_v, _bic(n, 0, ss), 0))
+
+    # constant
+    a = float(y.mean())
+    r2_v, ss = r2(np.full_like(y, a))
+    candidates.append(('constant', {'a': a}, r2_v, _bic(n, 1, ss), 1))
+
+    # linear
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            popt, _ = curve_fit(lambda x, a, b: a * x + b, x, y,
+                                 p0=[1.0, 0.0], maxfev=2000)
+            pred = popt[0] * x + popt[1]
+            r2_v, ss = r2(pred)
+            candidates.append(('linear',
+                                {'a': float(popt[0]), 'b': float(popt[1])},
+                                r2_v, _bic(n, 2, ss), 2))
+    except Exception:
+        pass
+
+    # quadratic
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            popt, _ = curve_fit(lambda x, a, b, c: a * x ** 2 + b * x + c,
+                                 x, y, p0=[1.0, 0.0, 0.0], maxfev=2000)
+            pred = popt[0] * x ** 2 + popt[1] * x + popt[2]
+            r2_v, ss = r2(pred)
+            candidates.append(('quadratic',
+                                {'a': float(popt[0]), 'b': float(popt[1]),
+                                 'c': float(popt[2])},
+                                r2_v, _bic(n, 3, ss), 3))
+    except Exception:
+        pass
+
+    # sqrt
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            popt, _ = curve_fit(
+                lambda x, a, b: a * np.sqrt(np.abs(x) + 1e-12) + b,
+                x, y, p0=[1.0, 0.0], maxfev=2000)
+            pred = popt[0] * np.sqrt(np.abs(x) + 1e-12) + popt[1]
+            r2_v, ss = r2(pred)
+            candidates.append(('sqrt',
+                                {'a': float(popt[0]), 'b': float(popt[1])},
+                                r2_v, _bic(n, 2, ss), 2))
+    except Exception:
+        pass
+
+    # log
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            popt, _ = curve_fit(
+                lambda x, a, b: a * np.log(np.abs(x) + 1e-8) + b,
+                x, y, p0=[1.0, 0.0], maxfev=2000)
+            pred = popt[0] * np.log(np.abs(x) + 1e-8) + popt[1]
+            r2_v, ss = r2(pred)
+            candidates.append(('log',
+                                {'a': float(popt[0]), 'b': float(popt[1])},
+                                r2_v, _bic(n, 2, ss), 2))
+    except Exception:
+        pass
+
+    # exp
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            popt, _ = curve_fit(
+                lambda x, a, b, c: a * np.exp(np.clip(b * x, -10, 10)) + c,
+                x, y, p0=[1.0, 0.5, 0.0], maxfev=2000)
+            pred = popt[0] * np.exp(np.clip(popt[1] * x, -10, 10)) + popt[2]
+            r2_v, ss = r2(pred)
+            candidates.append(('exp',
+                                {'a': float(popt[0]), 'b': float(popt[1]),
+                                 'c': float(popt[2])},
+                                r2_v, _bic(n, 3, ss), 3))
+    except Exception:
+        pass
+
+    # Variance of y is tiny -> 'zero' is the right call.
+    if ss_tot < 1e-12:
+        return ('zero', {}, 1.0)
+
+    # Pick lowest BIC. Strong simplicity bias: if a simpler primitive's
+    # fit_r2 is within 0.02 of the more complex one, prefer the simpler.
+    # Order from simplest to most complex.
+    complexity_order = {'zero': 0, 'constant': 1, 'linear': 2, 'sqrt': 2,
+                         'log': 2, 'quadratic': 3, 'exp': 3}
+    candidates_with_complexity = [
+        (name, params, r2_v, bic_v, k, complexity_order.get(name, 99))
+        for name, params, r2_v, bic_v, k in candidates
+    ]
+    # Find the best raw r2 score.
+    best_r2 = max(c[2] for c in candidates_with_complexity)
+    # Prefer simpler primitives whose r2 is within 0.02 of the best.
+    elig = [c for c in candidates_with_complexity if c[2] >= best_r2 - 0.02]
+    elig.sort(key=lambda c: (c[5], -c[2]))
+    name, params, r2_v, _bic_v, _k, _co = elig[0]
+    return (name, params, float(r2_v))
+
+
+def _format_primitive(name: str, params: dict[str, float], var: str) -> str:
+    """Pretty-print a fitted primitive as a short string in variable ``var``."""
+    if name == 'zero':
+        return '0'
+    if name == 'constant':
+        return f"{params['a']:+.4g}"
+    if name == 'linear':
+        a, b = params['a'], params['b']
+        if abs(b) < 1e-6:
+            return f"{a:+.4g}*{var}"
+        return f"{a:+.4g}*{var} {b:+.4g}"
+    if name == 'quadratic':
+        a, b, c = params['a'], params['b'], params['c']
+        return f"{a:+.4g}*{var}^2 {b:+.4g}*{var} {c:+.4g}"
+    if name == 'sqrt':
+        return f"{params['a']:+.4g}*sqrt(|{var}|) {params['b']:+.4g}"
+    if name == 'log':
+        return f"{params['a']:+.4g}*log(|{var}|+eps) {params['b']:+.4g}"
+    if name == 'exp':
+        return f"{params['a']:+.4g}*exp({params['b']:+.4g}*{var}) {params['c']:+.4g}"
+    return f"{name}({var})"
+
+
+def extract_symbolic_kan_clean(kan_model: MinimalKAN,
+                                input_names: Optional[list[str]] = None,
+                                n_samples: int = 100,
+                                r2_clean_threshold: float = 0.90,
+                                active_threshold: float = 0.01
+                                ) -> dict[str, Any]:
+    """Custom symbolic fitting (Fix 4).
+
+    For every edge in the trained KAN we sample ``n_samples`` points across
+    the canonical input range [-1, 1], call :func:`fit_symbolic_primitive`,
+    and label the edge:
+
+    - inactive  : edge_norm <= active_threshold
+    - clean     : fit_r2 >= r2_clean_threshold (matches a simple primitive)
+    - complex   : active but fit_r2 < threshold
+
+    For a single-layer ``[n_in, 1]`` model we then compose the expression
+    ``dV/dt = sum_i phi_i(x_i)``. For a deeper model we report per-edge fits
+    and a layer-1 weighted composition (best-effort).
+    """
+    if input_names is None:
+        input_names = ['V', 'dV/dS', 'd2V/dS2', 'S*dV/dS', 'S^2*d2V/dS2']
+    input_names = list(input_names)
+
+    layer_sizes = kan_model.layer_sizes
+    n_total = len(kan_model.edges)
+    active_mask = kan_model.active_edges_mask(threshold=active_threshold)
+
+    xs = np.linspace(-1.0, 1.0, n_samples).astype(np.float32)
+    xs_t = torch.tensor(xs)
+
+    per_edge_fits: dict[tuple[int, int, int], dict[str, Any]] = {}
+    n_clean = 0
+    n_active = 0
+    n_complex = 0
+
+    for li in range(len(layer_sizes) - 1):
+        n_in = layer_sizes[li]
+        n_out = layer_sizes[li + 1]
+        for j in range(n_out):
+            for i in range(n_in):
+                idx = kan_model._edge_index(li, i, j)
+                edge = kan_model.edges[idx]
+                with torch.no_grad():
+                    ys = edge(xs_t).numpy()
+                edge_norm = float(edge.edge_norm().item())
+                is_active = bool(active_mask[idx].item())
+                name, params, r2_v = fit_symbolic_primitive(xs, ys)
+                is_clean = is_active and (r2_v >= r2_clean_threshold)
+                if is_active:
+                    n_active += 1
+                if is_clean:
+                    n_clean += 1
+                if is_active and not is_clean:
+                    n_complex += 1
+                label = name if is_clean else (
+                    'inactive' if not is_active else 'complex')
+                per_edge_fits[(li, i, j)] = {
+                    'primitive': name,
+                    'params': params,
+                    'fit_r2': float(r2_v),
+                    'edge_norm': edge_norm,
+                    'active': is_active,
+                    'clean': is_clean,
+                    'label': label,
+                }
+
+    # Compose a readable expression.
+    if len(layer_sizes) == 2:
+        # Single layer: dV/dt = sum_i phi_i(x_i).
+        terms: list[str] = []
+        for i in range(layer_sizes[0]):
+            fit = per_edge_fits[(0, i, 0)]
+            if not fit['active']:
+                continue
+            var = input_names[i] if i < len(input_names) else f"x{i}"
+            if fit['clean']:
+                terms.append(_format_primitive(fit['primitive'], fit['params'], var))
+            else:
+                terms.append(f"complex({var})[r2={fit['fit_r2']:.2f}]")
+        expression_str = 'dV/dt = ' + (' + '.join(terms) if terms else '0')
+    else:
+        # Multi-layer: print per-layer summary.
+        parts: list[str] = []
+        for li in range(len(layer_sizes) - 1):
+            n_in = layer_sizes[li]
+            n_out = layer_sizes[li + 1]
+            for j in range(n_out):
+                inner: list[str] = []
+                for i in range(n_in):
+                    fit = per_edge_fits[(li, i, j)]
+                    if not fit['active']:
+                        continue
+                    if li == 0 and i < len(input_names):
+                        var = input_names[i]
+                    else:
+                        var = f"h{li}_{i}"
+                    inner.append(_format_primitive(fit['primitive'],
+                                                    fit['params'], var)
+                                  if fit['clean']
+                                  else f"complex({var})")
+                parts.append(f"L{li}_out{j} = " + (' + '.join(inner) or '0'))
+        expression_str = '; '.join(parts)
+
+    return {
+        'per_edge_fits': per_edge_fits,
+        'expression_str': expression_str,
+        'n_clean_edges': n_clean,
+        'n_active_edges': n_active,
+        'n_complex_edges': n_complex,
+        'n_total_edges': n_total,
+    }
+
+
+def _build_bs_dataset(n_S: int = 40, n_t: int = 40, sigma: float = 0.2,
+                       r: float = 0.05, K: float = 100.0,
+                       S_min: float = 50.0, S_max: float = 150.0,
+                       t_max: float = 0.99,
+                       target_kind: str = 'dVdt'
+                       ) -> tuple[np.ndarray, np.ndarray]:
+    """Build the canonical (X, y) for KAN-PDE on clean BS.
+
+    X columns: [V, dV/dS, d2V/dS2, S*dV/dS, S^2*d2V/dS2]
+    y       : dV/dt   (target_kind='dVdt')
+              V^2     (target_kind='v_squared', residual after BS)
+    """
+    V, S_grid, t_grid = generate_price_surface(
+        S_min=S_min, S_max=S_max, n_S=n_S, n_t=n_t,
+        K=K, r=r, sigma=sigma, T=t_max + 0.01, option_type='call',
+    )
+    derivs = compute_derivatives(V, S_grid, t_grid, trim=3)
+    Vt = derivs['V']
+    dVdS = derivs['dVdS']
+    d2VdS2 = derivs['d2VdS2']
+    S_mesh = derivs['S_mesh']
+    dVdt = derivs['dVdt']
+
+    X = np.column_stack([
+        Vt.ravel(),
+        dVdS.ravel(),
+        d2VdS2.ravel(),
+        (S_mesh * dVdS).ravel(),
+        (S_mesh ** 2 * d2VdS2).ravel(),
+    ]).astype(np.float32)
+    if target_kind == 'dVdt':
+        y = dVdt.ravel().astype(np.float32)
+    elif target_kind == 'v_squared':
+        # Nonlinear PDE: dV/dt = -0.5 sigma^2 S^2 V_SS - r S V_S + r V + V^2 / 100
+        y = (-0.5 * sigma ** 2 * (S_mesh ** 2 * d2VdS2)
+              - r * (S_mesh * dVdS)
+              + r * Vt
+              + Vt ** 2 / 100.0).ravel().astype(np.float32)
+    else:
+        raise ValueError(f"unknown target_kind={target_kind}")
+    return X, y
+
+
+_TINY_INPUT_NAMES = ['V', 'dV/dS', 'd2V/dS2', 'S*dV/dS', 'S^2*d2V/dS2']
+
+
+def run_kan_tiny_sweep(target_dataset: str = 'synthetic_bs',
+                        configs: Optional[list[list[int]]] = None,
+                        seed: int = 42, n_epochs: int = 5000
+                        ) -> pd.DataFrame:
+    """Run all 3 tiny configs on a dataset (Fix 1+5)."""
+    if configs is None:
+        configs = [[5, 1], [5, 2, 1], [5, 3, 1]]
+
+    if target_dataset == 'synthetic_bs':
+        X, y = _build_bs_dataset(target_kind='dVdt')
+    elif target_dataset == 'synthetic_v2':
+        X, y = _build_bs_dataset(target_kind='v_squared')
+    else:
+        raise ValueError(f"unknown target_dataset={target_dataset}")
+
+    rows: list[dict[str, Any]] = []
+    for cfg in configs:
+        # Edge count = sum of layer-pair products.
+        n_edges = sum(cfg[i] * cfg[i + 1] for i in range(len(cfg) - 1))
+        result = train_kan_tiny(X, y, layer_sizes=cfg, n_epochs=n_epochs,
+                                  lr=1e-3, lambda_l1=0.01,
+                                  lambda_complexity=0.01,
+                                  test_split=0.2, seed=seed)
+        sym = extract_symbolic_kan_clean(result['model'],
+                                          input_names=_TINY_INPUT_NAMES)
+        rows.append({
+            'config': str(cfg),
+            'n_edges': n_edges,
+            'train_r2': result['train_r2'],
+            'test_r2': result['test_r2'],
+            'n_active_edges': result['n_active_edges'],
+            'n_clean_edges': sym['n_clean_edges'],
+            'n_complex_edges': sym['n_complex_edges'],
+            'symbolic_expression': sym['expression_str'][:300],
+        })
+    return pd.DataFrame(rows)
+
+
+def run_kan_tiny_on_real(per_ticker_results: dict[str, Any],
+                           best_config: list[int] = [5, 1],
+                           seed: int = 42, n_epochs: int = 5000
+                           ) -> pd.DataFrame:
+    """Apply best tiny config to each ticker's GP-smoothed analytical-θ data.
+
+    For each ticker we build a 5-input dataset (V, dV/dS, d2V/dS2, S*dV/dS,
+    S^2*d2V/dS2) and train a tiny KAN. We also fit the 5-term linear SINDy
+    baseline on the same library for comparison.
+    """
+    rows: list[dict[str, Any]] = []
+    for ticker, entry in per_ticker_results.items():
+        row: dict[str, Any] = {'ticker': ticker}
+        try:
+            io = _extract_real_inputs_target(entry, use_analytical_theta=True)
+            if io is None:
+                io = _extract_real_inputs_target(entry,
+                                                  use_analytical_theta=False)
+            if io is None:
+                raise ValueError('no_inputs_target')
+            X_raw, y = io
+            if len(y) < 20:
+                raise ValueError('too_few_points')
+            # X_raw columns: [V, dV/dS, d2V/dS2, S, t]
+            V = X_raw[:, 0]
+            dVdS = X_raw[:, 1]
+            d2VdS2 = X_raw[:, 2]
+            S = X_raw[:, 3]
+            X5 = np.column_stack([V, dVdS, d2VdS2, S * dVdS,
+                                    S ** 2 * d2VdS2]).astype(np.float32)
+            result = train_kan_tiny(X5, y, layer_sizes=best_config,
+                                      n_epochs=n_epochs, lr=1e-3,
+                                      lambda_l1=0.01, lambda_complexity=0.01,
+                                      test_split=0.2, seed=seed)
+            sym = extract_symbolic_kan_clean(result['model'],
+                                              input_names=_TINY_INPUT_NAMES)
+            # SINDy 5-term baseline (linear least-squares).
+            coef, *_ = np.linalg.lstsq(X5, y, rcond=None)
+            pred = X5 @ coef
+            ss_res = float(np.sum((y - pred) ** 2))
+            ss_tot = float(np.sum((y - y.mean()) ** 2))
+            sindy_r2 = 1.0 - ss_res / max(ss_tot, 1e-30)
+            row.update({
+                'train_r2': result['train_r2'],
+                'test_r2': result['test_r2'],
+                'n_active_edges': result['n_active_edges'],
+                'n_clean_edges': sym['n_clean_edges'],
+                'symbolic_expression': sym['expression_str'][:300],
+                'sindy_r2_baseline': sindy_r2,
+                'error': '',
+            })
+        except Exception as exc:
+            logger.warning("tiny-KAN on %s failed: %s", ticker, exc)
+            row.update({'train_r2': np.nan, 'test_r2': np.nan,
+                        'n_active_edges': 0, 'n_clean_edges': 0,
+                        'symbolic_expression': '',
+                        'sindy_r2_baseline': np.nan,
+                        'error': str(exc)[:100]})
         rows.append(row)
     return pd.DataFrame(rows)
 
