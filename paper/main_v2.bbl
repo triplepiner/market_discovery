@@ -1,0 +1,137 @@
+\begin{thebibliography}{10}
+
+\bibitem{blackscholes1973}
+F.~Black and M.~Scholes.
+\newblock The pricing of options and corporate liabilities.
+\newblock {\em Journal of Political Economy}, 81(3):637--654, 1973.
+
+\bibitem{brunton2016sindy}
+S.~L. Brunton, J.~L. Proctor, and J.~N. Kutz.
+\newblock Discovering governing equations from data by sparse identification of
+  nonlinear dynamical systems.
+\newblock {\em Proceedings of the National Academy of Sciences},
+  113(15):3932--3937, 2016.
+
+\bibitem{desilva2020pysindy}
+B.~M. de~Silva, K.~Champion, M.~Quade, J.-C. Loiseau, J.~N. Kutz, and S.~L.
+  Brunton.
+\newblock {PySINDy}: A python package for the sparse identification of
+  nonlinear dynamical systems from data.
+\newblock {\em Journal of Open Source Software}, 5(49):2104, 2020.
+
+\bibitem{dhiman2023option}
+A.~Dhiman and Y.~Hu.
+\newblock Physics-informed neural network for option pricing.
+\newblock {\em arXiv preprint}, 2023.
+
+\bibitem{dupire1994pricing}
+B.~Dupire.
+\newblock Pricing with a smile.
+\newblock {\em RISK Magazine}, 7(1):18--20, 1994.
+
+\bibitem{fasel2022ensemble}
+U.~Fasel, J.~N. Kutz, B.~W. Brunton, and S.~L. Brunton.
+\newblock Ensemble-{SINDy}: Robust sparse model discovery in the low-data,
+  high-noise limit, with active learning and control.
+\newblock {\em Proceedings of the Royal Society A}, 478(2260):20210904, 2022.
+
+\bibitem{feng2025feynmankac}
+Y.~Feng, K.~Lin, A.~Matlia, and A.~Serdarevic.
+\newblock Data-driven {Feynman-Kac} discovery with applications to prediction
+  and data generation.
+\newblock {\em arXiv preprint arXiv:2511.08606}, 2025.
+\newblock NeurIPS 2025 Workshop on Generative AI in Finance.
+
+\bibitem{forootani2026gnsindy}
+A.~Forootani et~al.
+\newblock {GN-SINDy}: Equation discovery via sparse regression on refined
+  analytical gradients.
+\newblock {\em International Journal of Systems Science}, 2026.
+
+\bibitem{gao2025meshfree}
+H.~Gao, J.~N. Kutz, and B.~Font.
+\newblock Mesh-free sparse identification of nonlinear dynamics.
+\newblock {\em arXiv preprint arXiv:2505.16058}, 2025.
+
+\bibitem{gatheral2014arbitrage}
+J.~Gatheral and A.~Jacquier.
+\newblock Arbitrage-free {SVI} volatility surfaces.
+\newblock {\em Quantitative Finance}, 14(1):59--71, 2014.
+
+\bibitem{heston1993closed}
+S.~L. Heston.
+\newblock A closed-form solution for options with stochastic volatility with
+  applications to bond and currency options.
+\newblock {\em Review of Financial Studies}, 6(2):327--343, 1993.
+
+\bibitem{kaheman2020sindypi}
+K.~Kaheman, J.~N. Kutz, and S.~L. Brunton.
+\newblock {SINDy-PI}: a robust algorithm for parallel implicit sparse
+  identification of nonlinear dynamics.
+\newblock {\em Proceedings of the Royal Society A}, 476(2242):20200279, 2020.
+
+\bibitem{koenig2024kanodes}
+B.~C. Koenig, S.~Kim, and S.~Deng.
+\newblock {KAN-ODEs}: Kolmogorov--arnold network ordinary differential
+  equations for learning dynamical systems and hidden physics.
+\newblock {\em Computer Methods in Applied Mechanics and Engineering}, 2024.
+
+\bibitem{lagaris1998artificial}
+I.~E. Lagaris, A.~Likas, and D.~I. Fotiadis.
+\newblock Artificial neural networks for solving ordinary and partial
+  differential equations.
+\newblock {\em IEEE Transactions on Neural Networks}, 9(5):987--1000, 1998.
+
+\bibitem{liu2025kan}
+Z.~Liu, Y.~Wang, S.~Vaidya, F.~Ruehle, J.~Halverson, M.~Solja{\v{c}}i{\'c},
+  T.~Y. Hou, and M.~Tegmark.
+\newblock {KAN}: Kolmogorov--arnold networks.
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2025.
+
+\bibitem{lu2021deepxde}
+L.~Lu, X.~Meng, Z.~Mao, and G.~E. Karniadakis.
+\newblock {DeepXDE}: A deep learning library for solving differential
+  equations.
+\newblock {\em SIAM Review}, 63(1):208--228, 2021.
+
+\bibitem{merton1976option}
+R.~C. Merton.
+\newblock Option pricing when underlying stock returns are discontinuous.
+\newblock {\em Journal of Financial Economics}, 3(1-2):125--144, 1976.
+
+\bibitem{messenger2021weak}
+D.~A. Messenger and D.~M. Bortz.
+\newblock Weak {SINDy} for partial differential equations.
+\newblock {\em Journal of Computational Physics}, 443:110525, 2021.
+
+\bibitem{raissi2019pinn}
+M.~Raissi, P.~Perdikaris, and G.~E. Karniadakis.
+\newblock Physics-informed neural networks: A deep learning framework for
+  solving forward and inverse problems involving nonlinear partial differential
+  equations.
+\newblock {\em Journal of Computational Physics}, 378:686--707, 2019.
+
+\bibitem{rasmussen2006gp}
+C.~E. Rasmussen and C.~K.~I. Williams.
+\newblock {\em Gaussian Processes for Machine Learning}.
+\newblock MIT Press, 2006.
+
+\bibitem{rudy2017pde}
+S.~H. Rudy, S.~L. Brunton, J.~L. Proctor, and J.~N. Kutz.
+\newblock Data-driven discovery of partial differential equations.
+\newblock {\em Science Advances}, 3(4):e1602614, 2017.
+
+\bibitem{schaeffer2017learning}
+H.~Schaeffer.
+\newblock Learning partial differential equations via data discovery and sparse
+  optimization.
+\newblock {\em Proceedings of the Royal Society A}, 473(2197):20160446, 2017.
+
+\bibitem{sirignano2018dgm}
+J.~Sirignano and K.~Spiliopoulos.
+\newblock {DGM}: A deep learning algorithm for solving partial differential
+  equations.
+\newblock {\em Journal of Computational Physics}, 375:1339--1364, 2018.
+
+\end{thebibliography}

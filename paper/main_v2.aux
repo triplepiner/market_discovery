@@ -1,0 +1,115 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{blackscholes1973}
+\citation{dupire1994pricing}
+\citation{heston1993closed}
+\citation{brunton2016sindy,rudy2017pde}
+\citation{feng2025feynmankac}
+\citation{liu2025kan}
+\citation{gao2025meshfree}
+\citation{gatheral2014arbitrage}
+\citation{rasmussen2006gp}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Method}{1}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{2.1 Problem setup.}{1}{section*.1}\protected@file@percent }
+\citation{liu2025kan,koenig2024kanodes}
+\@writefile{toc}{\contentsline {paragraph}{2.2 GP derivative estimation.}{2}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{2.3 SINDy-KAN framework.}{2}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{2.4 PINN validation.}{2}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Experiments}{2}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Derivative method comparison}{2}{subsection.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces $R^2(\text  {clean})$ by derivative estimator and noise level (synthetic BS, $100{\times }100$ grid). Source: \texttt  {all\_methods\_noise\_comparison\_v2.csv}, \texttt  {gp\_noise\_robustness.csv}.}}{2}{table.1}\protected@file@percent }
+\newlabel{tab:noise}{{1}{2}{$R^2(\text {clean})$ by derivative estimator and noise level (synthetic BS, $100{\times }100$ grid). Source: \texttt {all\_methods\_noise\_comparison\_v2.csv}, \texttt {gp\_noise\_robustness.csv}}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}SINDy-KAN on real option data}{2}{subsection.3.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces $R^2(\text  {clean})$ vs.\ noise across four derivative estimators. GP dominates the $[1\%,10\%]$ band; weak-form integral SINDy is the only survivor at $>\!15\%$. Inset zooms on the low-noise crossover.}}{3}{figure.1}\protected@file@percent }
+\newlabel{fig:noise}{{1}{3}{$R^2(\text {clean})$ vs.\ noise across four derivative estimators. GP dominates the $[1\%,10\%]$ band; weak-form integral SINDy is the only survivor at $>\!15\%$. Inset zooms on the low-noise crossover}{figure.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces $[2,1]$-KAN-Dupire vs.\ linear Dupire on real chains (SVI-smoothed surface, analytical-$\theta $ target). $\Delta $ is in-sample $R^2$ lift; $\phi _{\text  {diff}}$ lin $R^2$ measures how nonlinear the diffusion activation is (lower = more nonlinear). Source: \texttt  {sindy\_kan\_dupire\_real.csv}.}}{3}{table.2}\protected@file@percent }
+\newlabel{tab:sindy-kan}{{2}{3}{$[2,1]$-KAN-Dupire vs.\ linear Dupire on real chains (SVI-smoothed surface, analytical-$\theta $ target). $\Delta $ is in-sample $R^2$ lift; $\phi _{\text {diff}}$ lin $R^2$ measures how nonlinear the diffusion activation is (lower = more nonlinear). Source: \texttt {sindy\_kan\_dupire\_real.csv}}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Misspecification detection}{3}{subsection.3.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces SINDy on synthetic Merton jump-diffusion data with the BS library. $\partial _{SS}V$ is the misspecification flag (true value $0$ under BS). Source: \texttt  {merton\_discovery.csv}.}}{3}{table.3}\protected@file@percent }
+\newlabel{tab:merton}{{3}{3}{SINDy on synthetic Merton jump-diffusion data with the BS library. $\partial _{SS}V$ is the misspecification flag (true value $0$ under BS). Source: \texttt {merton\_discovery.csv}}{table.3}{}}
+\citation{brunton2016sindy}
+\citation{rudy2017pde,schaeffer2017learning}
+\citation{messenger2021weak}
+\citation{fasel2022ensemble}
+\citation{kaheman2020sindypi}
+\citation{desilva2020pysindy}
+\citation{gao2025meshfree}
+\citation{forootani2026gnsindy}
+\citation{liu2025kan}
+\citation{koenig2024kanodes}
+\citation{feng2025feynmankac}
+\citation{raissi2019pinn,lu2021deepxde,sirignano2018dgm,dhiman2023option}
+\citation{blackscholes1973,dupire1994pricing,heston1993closed,merton1976option}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces $[2,1]$-KAN-Dupire activations. Left: $\phi _{\text  {drift}}(\partial _k C)$. Right: $\phi _{\text  {diff}}(\partial _{kk} C)$. Blue = synthetic constant-$\sigma $ Dupire (linear, as theory predicts); green = synthetic smile $\sigma ^2(k){=}0.04{+}0.10 k^2$; red = real SPY. The diffusion activation deviates from linearity on all four tickers (Table~\ref {tab:sindy-kan}); the shape of the red curve carries the volatility smile as a PDE-level nonlinearity.}}{4}{figure.2}\protected@file@percent }
+\newlabel{fig:sindy-kan}{{2}{4}{$[2,1]$-KAN-Dupire activations. Left: $\phi _{\text {drift}}(\partial _k C)$. Right: $\phi _{\text {diff}}(\partial _{kk} C)$. Blue = synthetic constant-$\sigma $ Dupire (linear, as theory predicts); green = synthetic smile $\sigma ^2(k){=}0.04{+}0.10 k^2$; red = real SPY. The diffusion activation deviates from linearity on all four tickers (Table~\ref {tab:sindy-kan}); the shape of the red curve carries the volatility smile as a PDE-level nonlinearity}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Limitations}{4}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Related Work}{4}{section.4}\protected@file@percent }
+\newlabel{sec:noise}{{4}{4}{Related Work}{section.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Conclusion}{4}{section.5}\protected@file@percent }
+\bibstyle{abbrv}
+\bibdata{references}
+\bibcite{blackscholes1973}{{1}{}{{}}{{}}}
+\bibcite{brunton2016sindy}{{2}{}{{}}{{}}}
+\bibcite{desilva2020pysindy}{{3}{}{{}}{{}}}
+\bibcite{dhiman2023option}{{4}{}{{}}{{}}}
+\bibcite{dupire1994pricing}{{5}{}{{}}{{}}}
+\bibcite{fasel2022ensemble}{{6}{}{{}}{{}}}
+\bibcite{feng2025feynmankac}{{7}{}{{}}{{}}}
+\bibcite{forootani2026gnsindy}{{8}{}{{}}{{}}}
+\bibcite{gao2025meshfree}{{9}{}{{}}{{}}}
+\bibcite{gatheral2014arbitrage}{{10}{}{{}}{{}}}
+\bibcite{heston1993closed}{{11}{}{{}}{{}}}
+\bibcite{kaheman2020sindypi}{{12}{}{{}}{{}}}
+\bibcite{koenig2024kanodes}{{13}{}{{}}{{}}}
+\bibcite{lagaris1998artificial}{{14}{}{{}}{{}}}
+\bibcite{liu2025kan}{{15}{}{{}}{{}}}
+\bibcite{lu2021deepxde}{{16}{}{{}}{{}}}
+\bibcite{merton1976option}{{17}{}{{}}{{}}}
+\bibcite{messenger2021weak}{{18}{}{{}}{{}}}
+\bibcite{raissi2019pinn}{{19}{}{{}}{{}}}
+\bibcite{rasmussen2006gp}{{20}{}{{}}{{}}}
+\bibcite{rudy2017pde}{{21}{}{{}}{{}}}
+\bibcite{schaeffer2017learning}{{22}{}{{}}{{}}}
+\bibcite{sirignano2018dgm}{{23}{}{{}}{{}}}
+\citation{raissi2019pinn,lagaris1998artificial}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Full noise comparison (all 6 methods $\times $ 13 noise levels)}{6}{appendix.A}\protected@file@percent }
+\newlabel{app:noise-full}{{A}{6}{Full noise comparison (all 6 methods $\times $ 13 noise levels)}{appendix.A}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Full $R^2(\text  {clean})$ table by method and noise. Source: \texttt  {all\_methods\_noise\_comparison\_v2.csv}, \texttt  {gp\_noise\_robustness.csv}, \texttt  {spectral\_noise\_robustness.csv}.}}{6}{table.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {B}PINN validation details}{6}{appendix.B}\protected@file@percent }
+\newlabel{app:pinn}{{B}{6}{PINN validation details}{appendix.B}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {C}Multicollinearity diagnostics}{6}{appendix.C}\protected@file@percent }
+\newlabel{app:cond}{{C}{6}{Multicollinearity diagnostics}{appendix.C}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {D}Heston variance slicing}{6}{appendix.D}\protected@file@percent }
+\newlabel{app:heston}{{D}{6}{Heston variance slicing}{appendix.D}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces PINN variants on synthetic BS surfaces. Source: \texttt  {pinn\_results\_\{call,put\}.csv}, \texttt  {hard\_constraint\_pinn.csv}, \texttt  {logprice\_pinn.csv}.}}{7}{table.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Put-option PINN absolute-error heatmaps. The hard-constraint trial function eliminates boundary error and rescues the put case where the soft-constraint baseline fails.}}{7}{figure.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {E}Per-ticker contribution analysis}{7}{appendix.E}\protected@file@percent }
+\newlabel{app:contrib}{{E}{7}{Per-ticker contribution analysis}{appendix.E}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {F}The analytical-$\theta $ fix: before vs.\ after}{7}{appendix.F}\protected@file@percent }
+\newlabel{app:tau-fix}{{F}{7}{The analytical-$\theta $ fix: before vs.\ after}{appendix.F}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {G}GP kernel selection per ticker}{7}{appendix.G}\protected@file@percent }
+\newlabel{app:gp-kernel}{{G}{7}{GP kernel selection per ticker}{appendix.G}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {H}Direct Dupire formula (non-regression)}{7}{appendix.H}\protected@file@percent }
+\newlabel{app:direct-dupire}{{H}{7}{Direct Dupire formula (non-regression)}{appendix.H}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {I}$[5,1]$ KAN in $(S,t)$ space and the 30-edge KAN}{7}{appendix.I}\protected@file@percent }
+\newlabel{app:5edge-kan}{{I}{7}{$[5,1]$ KAN in $(S,t)$ space and the 30-edge KAN}{appendix.I}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {J}SVI fitting and forward-price details}{7}{appendix.J}\protected@file@percent }
+\newlabel{app:svi}{{J}{7}{SVI fitting and forward-price details}{appendix.J}{}}
+\providecommand\NAT@force@numbers{}\NAT@force@numbers
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Sparse-regression diagnostics on the synthetic BS library. Source: \texttt  {ensemble\_sindy.csv}, \texttt  {elastic\_net.csv}, \texttt  {pca\_sindy.csv}.}}{8}{table.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Per-slice SINDy diffusion coefficient vs.\ $-\tfrac  {1}{2}v$ ground truth. Source: \texttt  {heston\_variance\_slicing.csv}.}}{8}{table.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {K}Out-of-sample analysis}{8}{appendix.K}\protected@file@percent }
+\newlabel{app:oos}{{K}{8}{Out-of-sample analysis}{appendix.K}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {L}Computation costs}{8}{appendix.L}\protected@file@percent }
+\newlabel{app:cost}{{L}{8}{Computation costs}{appendix.L}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {M}$\sigma _{\text  {SINDy}}$ vs.\ IV-averaging baselines}{8}{appendix.M}\protected@file@percent }
+\newlabel{app:sigma-cmp}{{M}{8}{$\sigma _{\text {SINDy}}$ vs.\ IV-averaging baselines}{appendix.M}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Fraction of $|\partial _t V|$ explained per term, per ticker. Source: \texttt  {term\_contributions\_real.csv}.}}{9}{table.8}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Real-data Dupire results before/after replacing FD $\partial _\tau C$ with analytical Black--Scholes $\theta $ evaluated pointwise from each grid point's own SVI-implied $\sigma _{\text  {imp}}$. Sources: \texttt  {improved\_real\_pipeline.csv} (v2), \texttt  {v4\_analytical\_theta\_results.csv} (v4), \texttt  {v5\_summary.csv} (windowed/per-expiration).}}{9}{table.9}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces RBF vs.\ Matern-$3/2$ GP-SINDy $R^2$ per ticker. Source: \texttt  {gp\_kernel\_comparison.csv}.}}{9}{table.10}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Direct Dupire formula $\sigma ^2_{\text  {loc}}{=}2(\theta +(r{-}q)K\partial _K C+qC)/(K^2\partial _{KK}C)$ on SPY using analytical $\theta $ (89.7\% of pixels valid, IV--vs--Dupire scatter correlation $0.37$).}}{9}{figure.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Wall-clock per stage (s). Source: \texttt  {computation\_costs.csv}.}}{10}{table.11}\protected@file@percent }
+\gdef \@abspage@last{10}
