@@ -1,0 +1,3 @@
+experiment,ticker,date,train_regime,test_regime,R2_test,R2_train,n_train,n_test,k_threshold
+regime_transfer,SPY,20260329,ATM,OTM,-0.888213899308173,0.499169420199011,150,450,0.05
+regime_transfer,SPY,20260329,OTM,ATM,-0.11923731602333265,0.75449090446512,450,150,0.05

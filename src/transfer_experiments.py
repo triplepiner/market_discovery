@@ -430,3 +430,378 @@ def run_all_transfer_experiments(date: str = '20260329',
         'loo_df': loo_df,
         'figure_path': fig_path,
     }
+
+
+# ---------------------------------------------------------------------------
+# Improvement 5: per-expiration coefficients + regime transfer
+# ---------------------------------------------------------------------------
+
+
+def _fit_dupire_2term(dCdk: np.ndarray, d2Cdk2: np.ndarray,
+                       theta: np.ndarray) -> tuple[float, float]:
+    """OLS 2-term Dupire fit. Returns (coef_drift, coef_diffusion).
+
+    The model is ``theta = c_drift * dC/dk + c_diff * d2C/dk2`` with no
+    intercept -- matches the SINDy-Dupire library form. NaNs are masked.
+    """
+    a = np.asarray(dCdk, dtype=np.float64).ravel()
+    b = np.asarray(d2Cdk2, dtype=np.float64).ravel()
+    t = np.asarray(theta, dtype=np.float64).ravel()
+    ok = np.isfinite(a) & np.isfinite(b) & np.isfinite(t)
+    a, b, t = a[ok], b[ok], t[ok]
+    if a.size < 3:
+        return float('nan'), float('nan')
+    A = np.column_stack([a, b])
+    coef, *_ = np.linalg.lstsq(A, t, rcond=None)
+    return float(coef[0]), float(coef[1])
+
+
+def leave_one_expiration_coefficients(ticker: str, date: str,
+                                        n_epochs: int = 1500,
+                                        seed: int = 42) -> pd.DataFrame:
+    """Per-expiration LOO that also extracts discovered coefficients.
+
+    For each held-out tau column, fits a [2,1] KAN on the rest, computes the
+    test R^2 on the held-out maturity, and -- in addition -- fits a linear
+    2-term Dupire regression on the held-out slice to extract physical
+    ``coef_drift`` and ``coef_diffusion`` values. Also records the
+    market-average implied volatility at that maturity from the raw chain.
+
+    Returns DataFrame with columns: ticker, tau, R2, coef_drift,
+    coef_diffusion, market_avg_iv, n_strikes.
+    """
+    chain = _load_chain(ticker, date)
+    surf = _surface_from_chain(chain)
+    tau_grid = surf['tau']
+    dCdk = surf['dCdk']
+    d2Cdk2 = surf['d2Cdk2']
+    theta = surf['theta']
+    n_k, n_tau = dCdk.shape
+
+    # Raw-chain market IVs by expiration tau.
+    raw = chain['option_df']
+    iv_col = 'implied_vol' if 'implied_vol' in raw.columns else None
+
+    rows = []
+    for j in range(n_tau):
+        tau_j = float(tau_grid[j])
+        mask_train = np.ones((n_k, n_tau), dtype=bool); mask_train[:, j] = False
+        mask_test = ~mask_train
+        try:
+            res = _train_on_mask(dCdk, d2Cdk2, theta, mask_train,
+                                  n_epochs=n_epochs, seed=seed)
+            a_te = dCdk[mask_test].ravel()
+            b_te = d2Cdk2[mask_test].ravel()
+            t_te = theta[mask_test].ravel()
+            ok = np.isfinite(a_te) & np.isfinite(b_te) & np.isfinite(t_te)
+            pred = _predict_kan(res, a_te[ok], b_te[ok])
+            r2 = _r2(t_te[ok], pred)
+        except Exception as exc:
+            logger.warning("LOO coef tau_idx=%d failed: %s", j, exc)
+            r2 = float('nan')
+
+        # Discover coefficients on the held-out slice using OLS 2-term Dupire.
+        try:
+            c_drift, c_diff = _fit_dupire_2term(
+                dCdk[:, j], d2Cdk2[:, j], theta[:, j])
+        except Exception as exc:
+            logger.warning("coef fit tau_idx=%d failed: %s", j, exc)
+            c_drift, c_diff = float('nan'), float('nan')
+
+        # Market-average IV for this expiration: find the raw-chain rows whose
+        # tau is closest to tau_j (the SVI grid tau may not exactly equal a
+        # raw tau, so use nearest-tau matching with a small tolerance).
+        market_iv = float('nan')
+        n_strikes = 0
+        if iv_col is not None and 'tau' in raw.columns:
+            try:
+                tau_diffs = np.abs(raw['tau'].values - tau_j)
+                # Match rows within 1 day = ~0.0027 yr.
+                tol = max(0.005, 0.05 * tau_j)
+                mask = tau_diffs <= tol
+                if mask.sum() == 0:
+                    # Fall back to the unique tau closest to tau_j.
+                    nearest = float(raw['tau'].iloc[int(np.argmin(tau_diffs))])
+                    mask = np.abs(raw['tau'].values - nearest) < 1e-9
+                ivs = raw[iv_col].values[mask]
+                ivs = ivs[np.isfinite(ivs)]
+                if ivs.size > 0:
+                    market_iv = float(np.mean(ivs))
+                    n_strikes = int(ivs.size)
+            except Exception as exc:
+                logger.warning("market_iv lookup tau=%.3f failed: %s",
+                               tau_j, exc)
+
+        rows.append({
+            'ticker': ticker, 'tau': tau_j, 'R2': float(r2),
+            'coef_drift': float(c_drift),
+            'coef_diffusion': float(c_diff),
+            'market_avg_iv': float(market_iv),
+            'n_strikes': int(n_strikes),
+        })
+    return pd.DataFrame(rows)
+
+
+def regime_transfer_atm_otm(ticker: str = 'SPY', date: str = '20260329',
+                              k_threshold: float = 0.05,
+                              n_epochs: int = 1500,
+                              seed: int = 42) -> list[dict[str, Any]]:
+    """Train on one |k| regime and evaluate on the other.
+
+    Splits the SVI-smoothed (k, tau) grid by |k| < k_threshold (ATM) vs
+    |k| >= k_threshold (OTM). Runs both transfer directions.
+
+    Returns a list of two row dicts ready to append to
+    ``generalization_analysis.csv`` with columns: experiment, train_regime,
+    test_regime, R2_test, R2_train, n_train, n_test.
+    """
+    surf = _surface_from_chain(_load_chain(ticker, date))
+    k_grid = surf['k']
+    dCdk = surf['dCdk']; d2Cdk2 = surf['d2Cdk2']; theta = surf['theta']
+    n_k, n_tau = dCdk.shape
+
+    atm_k = np.abs(k_grid) < float(k_threshold)
+    otm_k = ~atm_k
+    atm_mask = np.tile(atm_k.reshape(-1, 1), (1, n_tau))
+    otm_mask = np.tile(otm_k.reshape(-1, 1), (1, n_tau))
+
+    def _run(train_mask, test_mask, train_name, test_name):
+        out = {
+            'experiment': 'regime_transfer',
+            'ticker': ticker, 'date': date,
+            'train_regime': train_name, 'test_regime': test_name,
+            'R2_test': float('nan'), 'R2_train': float('nan'),
+            'n_train': int(train_mask.sum()),
+            'n_test': int(test_mask.sum()),
+            'k_threshold': float(k_threshold),
+        }
+        if train_mask.sum() < 20 or test_mask.sum() < 5:
+            return out
+        try:
+            res = _train_on_mask(dCdk, d2Cdk2, theta, train_mask,
+                                  n_epochs=n_epochs, seed=seed)
+            out['R2_train'] = float(res['train_r2'])
+            a_te = dCdk[test_mask].ravel()
+            b_te = d2Cdk2[test_mask].ravel()
+            t_te = theta[test_mask].ravel()
+            ok = np.isfinite(a_te) & np.isfinite(b_te) & np.isfinite(t_te)
+            pred = _predict_kan(res, a_te[ok], b_te[ok])
+            out['R2_test'] = float(_r2(t_te[ok], pred))
+            out['n_test'] = int(ok.sum())
+        except Exception as exc:
+            logger.warning("regime_transfer %s->%s failed: %s",
+                           train_name, test_name, exc)
+        return out
+
+    rows = [
+        _run(atm_mask, otm_mask, 'ATM', 'OTM'),
+        _run(otm_mask, atm_mask, 'OTM', 'ATM'),
+    ]
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Figures for Improvement 5
+# ---------------------------------------------------------------------------
+
+
+def plot_coefficient_vs_maturity(
+        coef_df: pd.DataFrame,
+        save_path: str = 'outputs/figures/paper/coefficient_vs_maturity'
+        ) -> Optional[str]:
+    """Dual-axis plot of discovered diffusion coefficient vs market IV term.
+
+    Left axis: discovered diffusion coefficient (#0072B2 blue).
+    Right axis: market-average implied volatility (#D55E00 orange).
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        plt.rcParams.update({
+            'font.family': 'serif',
+            'font.size': 11,
+            'axes.titlesize': 12,
+            'axes.labelsize': 11,
+            'legend.fontsize': 9,
+        })
+        df = coef_df.sort_values('tau').reset_index(drop=True)
+        fig, ax1 = plt.subplots(figsize=(7.5, 4.5))
+        c_blue = '#0072B2'
+        c_orange = '#D55E00'
+
+        ax1.plot(df['tau'], df['coef_diffusion'], marker='o', lw=2,
+                  ms=6, color=c_blue, label='discovered diffusion coef')
+        ax1.set_xlabel(r'maturity $\tau$ (years)')
+        ax1.set_ylabel('discovered diffusion coefficient', color=c_blue)
+        ax1.tick_params(axis='y', labelcolor=c_blue)
+        ax1.grid(True, alpha=0.3)
+        ax1.axhline(0.0, color='gray', lw=0.8, ls=':', alpha=0.5)
+
+        ax2 = ax1.twinx()
+        ax2.plot(df['tau'], df['market_avg_iv'], marker='s', lw=2,
+                  ms=6, color=c_orange, label='market avg IV')
+        ax2.set_ylabel('market average implied volatility',
+                        color=c_orange)
+        ax2.tick_params(axis='y', labelcolor=c_orange)
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2,
+                    loc='best', frameon=True)
+
+        ax1.set_title('Discovered diffusion coefficient vs market IV '
+                       'term structure')
+        plt.tight_layout()
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        png = f"{save_path}.png"; pdf = f"{save_path}.pdf"
+        fig.savefig(png, dpi=300, bbox_inches='tight')
+        fig.savefig(pdf, bbox_inches='tight')
+        plt.close(fig)
+        return png
+    except Exception as exc:
+        logger.warning("plot_coefficient_vs_maturity failed: %s", exc)
+        return None
+
+
+def plot_transfer_heatmap(
+        loo_df: pd.DataFrame,
+        save_path: str = 'outputs/figures/paper/transfer_heatmap'
+        ) -> Optional[str]:
+    """Per-expiration LOO R^2 with regime-colored points and annotations.
+
+    x-axis: tau (years). y-axis: held-out R^2. Points colored green where
+    R^2 > 0.5, orange where 0 < R^2 <= 0.5, red where R^2 <= 0.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        plt.rcParams.update({
+            'font.family': 'serif',
+            'font.size': 11,
+            'axes.titlesize': 12,
+            'axes.labelsize': 11,
+            'legend.fontsize': 9,
+        })
+        # Use 'tau' if present, else 'tau_left_out'.
+        tau_col = 'tau' if 'tau' in loo_df.columns else 'tau_left_out'
+        df = loo_df.sort_values(tau_col).reset_index(drop=True)
+        fig, ax = plt.subplots(figsize=(8.0, 4.8))
+
+        def _color(r2):
+            if not np.isfinite(r2):
+                return '#999999'
+            if r2 > 0.5:
+                return '#009E73'  # green
+            if r2 > 0.0:
+                return '#D55E00'  # orange
+            return '#CC0033'      # red
+
+        colors = [_color(r) for r in df['R2']]
+        ax.scatter(df[tau_col], df['R2'], c=colors, s=70,
+                    edgecolor='black', linewidth=0.5, zorder=3)
+        ax.plot(df[tau_col], df['R2'], color='#444444', lw=0.8,
+                  alpha=0.4, zorder=2)
+        ax.axhline(0.0, color='gray', lw=1, ls='--', alpha=0.6)
+
+        # Annotate each point with the tau value (1-2 dec digits).
+        if 'date' in df.columns:
+            label_src = df['date'].astype(str)
+        else:
+            label_src = [f"{t:.2f}" for t in df[tau_col]]
+        for x, y, lab in zip(df[tau_col], df['R2'], label_src):
+            if np.isfinite(y):
+                ax.annotate(str(lab)[-4:] if isinstance(lab, str)
+                              and len(str(lab)) >= 4 else f"{float(x):.2f}",
+                              (x, y),
+                              xytext=(4, 4), textcoords='offset points',
+                              fontsize=7, alpha=0.75)
+
+        # Legend proxies.
+        from matplotlib.lines import Line2D
+        legend_items = [
+            Line2D([0], [0], marker='o', color='w',
+                    markerfacecolor='#009E73', markersize=8,
+                    label=r'$R^2 > 0.5$'),
+            Line2D([0], [0], marker='o', color='w',
+                    markerfacecolor='#D55E00', markersize=8,
+                    label=r'$0 < R^2 \leq 0.5$'),
+            Line2D([0], [0], marker='o', color='w',
+                    markerfacecolor='#CC0033', markersize=8,
+                    label=r'$R^2 \leq 0$'),
+        ]
+        ax.legend(handles=legend_items, loc='lower left', frameon=True)
+        ax.set_xlabel(r'held-out maturity $\tau$ (years)')
+        ax.set_ylabel(r'leave-one-out test $R^2$')
+        ax.set_title(r'Per-expiration leave-one-out $R^2$ (SPY)')
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        png = f"{save_path}.png"; pdf = f"{save_path}.pdf"
+        fig.savefig(png, dpi=300, bbox_inches='tight')
+        fig.savefig(pdf, bbox_inches='tight')
+        plt.close(fig)
+        return png
+    except Exception as exc:
+        logger.warning("plot_transfer_heatmap failed: %s", exc)
+        return None
+
+
+def run_generalization_analysis(ticker: str = 'SPY', date: str = '20260329',
+                                  n_epochs: int = 1500, seed: int = 42,
+                                  ) -> dict[str, Any]:
+    """Orchestrate Improvement 5: per-expiration coefs + regime transfer.
+
+    Writes:
+      * outputs/tables/per_expiration_coefficients.csv
+      * outputs/tables/generalization_analysis.csv
+      * outputs/figures/paper/coefficient_vs_maturity.{png,pdf}
+      * outputs/figures/paper/transfer_heatmap.{png,pdf}
+
+    Returns a dict with ``coef_df``, ``regime_df``, and figure paths.
+    """
+    out_dir = os.path.join('outputs', 'tables')
+    fig_dir = os.path.join('outputs', 'figures', 'paper')
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(fig_dir, exist_ok=True)
+
+    # A) per-expiration coefficient table
+    coef_df = leave_one_expiration_coefficients(
+        ticker, date, n_epochs=n_epochs, seed=seed)
+    coef_path = os.path.join(out_dir, 'per_expiration_coefficients.csv')
+    coef_df.to_csv(coef_path, index=False)
+
+    # C) regime transfer
+    regime_rows = regime_transfer_atm_otm(
+        ticker=ticker, date=date, n_epochs=n_epochs, seed=seed)
+    regime_df = pd.DataFrame(regime_rows)
+    gen_path = os.path.join(out_dir, 'generalization_analysis.csv')
+    regime_df.to_csv(gen_path, index=False)
+
+    # Figures (A) and (B).
+    coef_fig = plot_coefficient_vs_maturity(
+        coef_df, save_path=os.path.join(fig_dir, 'coefficient_vs_maturity'))
+
+    # B) Use the existing per_expiration_loo.csv if present; otherwise build
+    # one on the fly from coef_df (it already carries R^2 per tau).
+    loo_csv = os.path.join(out_dir, 'per_expiration_loo.csv')
+    if os.path.isfile(loo_csv):
+        loo_df = pd.read_csv(loo_csv)
+    else:
+        loo_df = coef_df.rename(columns={'tau': 'tau_left_out'})[
+            ['ticker', 'tau_left_out', 'R2']].copy()
+    heatmap_fig = plot_transfer_heatmap(
+        loo_df, save_path=os.path.join(fig_dir, 'transfer_heatmap'))
+
+    return {
+        'coef_df': coef_df,
+        'regime_df': regime_df,
+        'coef_csv': coef_path,
+        'generalization_csv': gen_path,
+        'coef_figure': coef_fig,
+        'heatmap_figure': heatmap_fig,
+    }

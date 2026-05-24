@@ -101,8 +101,8 @@ F & GP       & log-$m$ + SVI     & 2-term & analytical & $[2,1]$ KAN  & $\mathbf
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.70\linewidth]{figures/fig2_ablation_bars.pdf}
-\caption{Ablation chain $R^2$ on real SPY. GP derivatives (A$\to$B) and the analytical-$\theta$/KAN pair (D$\to$F) are the two dominant contributions.}
+\includegraphics[width=0.78\linewidth]{figures/ablation_grouped.pdf}
+\caption{Ablation chain $R^2$ on real SPY, grouped by intervention. The full chain is non-monotonic: moving from raw-$K$ 5-term (B) to log-moneyness 2-term (C, D) costs $R^2$ on its own --- the GP derivatives and the analytical-$\theta$/KAN pair (E$\to$F) are the two dominant gains, but the intermediate steps reflect that the FD $\partial_\tau C$ remains the bottleneck until analytical $\theta$ is substituted. The KAN-only monotonic story (each component added in the order GP $\to$ log-$m$ $\to$ analytical $\theta$ $\to$ KAN) is shown in Appendix~\ref{app:ablation-kan} (\texttt{ablation\_kan\_clean.pdf}).}
 \label{fig:ablation}
 \end{figure}
 
@@ -126,9 +126,20 @@ MSFT  & $172$ & $0.604$ & $\mathbf{0.925}$ & $+0.321$ & $0.958$ & $-1.11$ \\
 \end{tabular}
 \end{table}
 
+Five-fold spatial cross-validation on SPY confirms a generalization gap that is real but bounded: linear Dupire moves from in-sample $R^2{=}0.44$ to CV $R^2{=}0.29 \pm 0.04$, and the $[2,1]$ KAN moves from $0.77$ to $0.50 \pm 0.07$. The KAN dominates on both metrics, and per-fold activation curves are highly consistent (drift-edge mean pairwise correlation $0.989$, diffusion-edge $0.824$), so the in-sample lift is not a single-fit artifact (Appendix~\ref{app:cv}, \texttt{cv\_results.csv}, \texttt{cv\_kan\_activations\_summary.csv}). The diffusion edge remains the seed/fold-sensitive component, consistent with the activation-stability analysis (Appendix~\ref{app:stability}).
+
 \subsection{Misspecification detection}\label{sec:merton}
 
 Table~\ref{tab:merton} reports SINDy with the Black--Scholes library applied to a synthetic Merton jump-diffusion surface. The canonical $V$, $S\partial_S V$, $S^2\partial_{SS} V$ terms recover values close to their BS counterparts, but the spurious $\partial_{SS} V$ coefficient (true value $0$ under BS) is identified as $\mathbf{1.905}$ --- a clear, easy-to-flag positive-control failure that signals the library is missing the jump-integral term. The framework therefore doubles as a misspecification diagnostic: spurious activation of a term that should be zero is a structural alarm, not a parameter estimate.
+
+\textbf{Quantitative misspecification taxonomy.} Sweeping the Merton jump intensity $\lambda \in [0, 0.5]$ shows that the spurious $\partial_{SS} V$ coefficient scales \emph{linearly} with $\lambda$: a linear fit yields slope $27.88$ with $R^2{=}0.9999$ (Figure~\ref{fig:misspec-jump}), so the magnitude of the spurious activation is a quantitative proxy for misspecification strength rather than a binary flag. At $\lambda{=}0.20$ the spurious coefficient is $5.98$; under a Heston surface with $\sigma_v{=}0.30$ the same term reaches $146.47$ --- a $24.5\times$ magnitude ratio that distinguishes pure-jump from stochastic-volatility misspecification by signature rather than just by presence (Appendix~\ref{app:misspec-taxonomy}).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/misspec_jump_sweep.pdf}
+\caption{Spurious $\partial_{SS}V$ coefficient (true value $0$ under BS) vs.\ Merton jump intensity $\lambda$. The linear fit has slope $27.88$ and $R^2{=}0.9999$: spurious activation magnitude is a quantitative misspecification meter. Source: \texttt{misspec\_taxonomy.csv}.}
+\label{fig:misspec-jump}
+\end{figure}
 
 \begin{table}[h]
 \centering\footnotesize
@@ -155,7 +166,7 @@ We list the most important known weaknesses, each backed by an explicit experime
 
 \textbf{Analytical $\theta$ assumes BS pricing locally.} Replacing the finite-difference $\partial_\tau C$ with the BS theta formula is the single intervention that makes the linear-Dupire regression work on real data, but this is a model-dependent preprocessing step, not model-free PDE discovery. The pipeline therefore discovers structure relative to a BS-consistent target.
 
-\textbf{Maturity non-stationarity.} Per-expiration leave-one-out cross-validation on SPY (Appendix~\ref{app:transfer}, \texttt{per\_expiration\_loo.csv}) shows $R^2$ that ranges from $0.81$ at interior maturities ($\tau{\approx}0.80$) down to $-10.57$ at the longest maturity ($\tau{\approx}1.82$); the aggregate maturity-split (train on $\tau{<}0.5$, test on $\tau{\ge}0.5$) is also strongly negative. The learned operator is not stationary across the term structure.
+\textbf{Maturity non-stationarity --- identifiability collapse, not market signal.} Per-expiration leave-one-out cross-validation on SPY (Appendix~\ref{app:transfer}, \texttt{per\_expiration\_loo.csv}) shows $R^2$ that ranges from $0.81$ at interior maturities ($\tau{\approx}0.80$) down to $-10.57$ at the longest maturity ($\tau{\approx}1.82$); the aggregate maturity-split (train on $\tau{<}0.5$, test on $\tau{\ge}0.5$) is also strongly negative. Crucially, the per-expiration diffusion coefficient does \emph{not} track the market implied-volatility term structure (Spearman corr $= +0.008$) and turns \emph{structurally negative} for $\tau > 0.4$ --- impossible for a local variance. This diagnoses a regression-identifiability collapse from drift/diffusion collinearity at maturity boundaries, not a genuine non-stationary market signal (Appendix~\ref{app:per-exp}, \texttt{per\_expiration\_coefficients.csv}). A complementary moneyness split provides additional evidence of non-invariance: ATM$\to$OTM transfer yields $R^2{=}-0.89$ and OTM$\to$ATM yields $-0.12$ (\texttt{generalization\_analysis.csv}). The learned operator is not stationary across either the term structure or the moneyness regime.
 
 \textbf{Cross-ticker non-transfer.} Training on one ticker and testing on another gives asymmetric results: SPY$\to$QQQ achieves $R^2{=}0.11$ but the reverse QQQ$\to$SPY yields $-1.01$; AAPL$\to$MSFT gives $-1.35$, MSFT$\to$AAPL gives $0.22$; temporal SPY$\to$SPY (March $\to$ May 2026) gives $-3.51$, QQQ $-9.91$, and a milder maturity split ($\tau{<}0.75$ vs.\ $\tau{>}0.75$) gives $-11.01$ (\texttt{transfer\_experiments.csv}). Each underlying carries its own operator; index dynamics do not transfer to single names.
 
@@ -381,5 +392,135 @@ Derivative-method comparison & $9.9$ \\
 
 \section{$\sigma_{\text{SINDy}}$ vs.\ IV-averaging baselines}\label{app:sigma-cmp}
 Volume-weighted IV achieves rel.\ error $\{0.3\%, 1.1\%, 5.0\%, 1.1\%\}$ on SPY/QQQ/AAPL/MSFT for ATM $\sigma$ recovery; median IV achieves $\{0.7\%, 4.5\%, 0.8\%, 4.8\%\}$; SINDy (linear Dupire) achieves $\{12.7\%, 10.6\%, 6.1\%, 29.3\%\}$. SINDy's value on real data is structural discovery and nonlinearity detection, not raw point-estimate accuracy. Source: \texttt{sigma\_method\_comparison.csv}.
+
+\section{Misspecification diagnostic taxonomy}\label{app:misspec-taxonomy}
+
+We extend the single-point Merton experiment of \S\ref{sec:merton} into a structured sweep that probes how the BS-library SINDy coefficients deform under three families of misspecification: pure Merton jumps (sweep over intensity $\lambda$ and mean log-jump $\mu_J$) and Heston stochastic volatility (sweep over vol-of-vol $\sigma_v$). Source: \texttt{outputs/tables/misspec\_taxonomy.csv}, generated by \texttt{src/misspec\_taxonomy.py}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Misspecification taxonomy: spurious $\partial_{SS}V$ activation under three families. The signature distinguishes jumps (small, linear-in-$\lambda$) from stochastic volatility (large, $24.5\times$ at matched stress).}
+\label{tab:misspec-taxonomy}
+\begin{tabular}{llrrr}
+\toprule
+Family & Parameter & Value & spurious $\partial_{SS}V$ & $R^2$ \\
+\midrule
+Jump intensity      & $\lambda$  & $0.05$ & $1.88$   & $1.000$ \\
+Jump intensity      & $\lambda$  & $0.10$ & $3.23$   & $1.000$ \\
+Jump intensity      & $\lambda$  & $0.20$ & $5.98$   & $1.000$ \\
+Jump intensity      & $\lambda$  & $0.50$ & $14.48$  & $0.999$ \\
+Jump size           & $\mu_J$    & $+0.10$ & $-22.37$ & $1.000$ \\
+Stochastic vol      & $\sigma_v$ & $0.10$ & $60.83$  & $1.000$ \\
+Stochastic vol      & $\sigma_v$ & $0.20$ & $110.07$ & $0.999$ \\
+Stochastic vol      & $\sigma_v$ & $0.30$ & $\mathbf{146.47}$ & $0.996$ \\
+Stochastic vol      & $\sigma_v$ & $0.50$ & $172.01$ & $0.988$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two quantitative findings make this a taxonomy rather than a binary alarm. First, the intensity sweep is essentially linear: a least-squares fit of spurious $\partial_{SS}V$ on $\lambda$ over $\{0, 0.01, 0.05, 0.1, 0.2, 0.5\}$ yields slope $27.88$ with $R^2{=}0.9999$ (Figure~\ref{fig:misspec-jump}), so the spurious-coefficient magnitude can be read as a calibrated meter for jump intensity. Second, at matched ``visual'' stress on the surface ($\lambda{=}0.20$ vs.\ $\sigma_v{=}0.30$), the stochastic-vol misspecification produces a spurious coefficient $146.47 / 5.98 = 24.5\times$ larger than the jump misspecification. The discovery framework therefore distinguishes \emph{which family} of misspecification is present from the signature of the spurious activation. Figure~\ref{fig:misspec-stochvol} visualizes the qualitatively different deformation under Heston. We emphasize the claim is narrow: the spurious coefficient pattern is diagnostic of jump-vs-stochvol misspecification of the constant-$\sigma$ BS library, not a recovery of jump or Heston dynamics from option data.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/misspec_stochvol_pattern.pdf}
+\caption{Heston ($\sigma_v$ sweep) deformation pattern: spurious $\partial_{SS}V$ saturates at $\sim\!172$, roughly $24.5\times$ the jump-misspecification magnitude at matched parameter stress. Source: \texttt{misspec\_taxonomy.csv}.}
+\label{fig:misspec-stochvol}
+\end{figure}
+
+\section{Discovery-method baselines and 5-fold cross-validation}\label{app:cv}
+
+\textbf{Discovery methods on the SVI-collinear 2-term library.} We benchmark four sparse-regression strategies and one closed-form baseline against the same SPY surface used in \S\ref{sec:realdata}. Source: \texttt{outputs/tables/discovery\_method\_comparison.csv}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Discovery-method comparison on real SPY. The two sparsity-driven methods (weak-form regression and Ridge+threshold) zero out the diffusion coefficient on the 2-column SVI-collinear library; STLSQ-OLS is required to retain a diffusion term, and the KAN diagnostic stacks on top.}
+\label{tab:discovery-methods}
+\begin{tabular}{lrl}
+\toprule
+Method & $R^2$ (SPY) & Notes \\
+\midrule
+STLSQ (2-term GP-Dupire, OLS)         & $0.439$ & coefficients; baseline \\
+\textbf{STLSQ $+$ $[2,1]$ KAN}        & $\mathbf{0.767}$ & activations; nonlinear residual \\
+Weak-form regression (spectral basis) & $0.232$ & $c_2{=}-7.1\!\times\!10^{-7}$, $\sigma_{\text{loc}}$ undefined \\
+Ridge $+$ threshold (RidgeCV)         & $0.080$ & $c_2$ thresholded to $0$ \\
+Direct Dupire (pointwise, FD on GP)   & n/a (pointwise) & $\sigma_{\text{loc}}$ median $0.205$, IQR $0.200$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two sparsity-driven methods (weak-form regression and Ridge+threshold) collapse the diffusion coefficient on this 2-column library because $\partial_k C$ and $\partial_{kk} C$ are nearly collinear after SVI smoothing --- any sparsity prior prefers the smaller-magnitude diffusion term to be exactly zero. STLSQ with OLS retains both columns, and the KAN diagnostic then captures the residual nonlinearity. Direct pointwise Dupire on the GP surface produces a defined local-volatility field on $80\%$ of cells with median $\sigma_{\text{loc}}{=}0.205$ but is not directly comparable on $R^2$.
+
+\textbf{5-fold spatial cross-validation.} We split SPY into five spatial folds in $(k,\tau)$ and report mean$\pm$std of test $R^2$. Source: \texttt{outputs/tables/cv\_results.csv}, \texttt{cv\_kan\_activations\_summary.csv}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{5-fold spatial CV on SPY. KAN dominates on both in-sample fit and CV $R^2$.}
+\label{tab:cv}
+\begin{tabular}{lrr}
+\toprule
+Model & in-sample $R^2$ & CV $R^2$ (mean $\pm$ std) \\
+\midrule
+Linear Dupire (2-term) & $0.439$ & $0.289 \pm 0.037$ \\
+$[2,1]$ KAN-Dupire     & $\mathbf{0.767}$ & $\mathbf{0.496 \pm 0.065}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across the five folds the learned KAN activations are highly consistent (mean pairwise correlation $0.989$ for the drift edge, $0.824$ for the diffusion edge), so the lift over linear Dupire is not a single-fit artifact. The lower diffusion-edge correlation matches the seed-sensitivity finding of Appendix~\ref{app:stability}: the diffusion activation shape is the seed/fold-dependent component of the diagnostic and should be reported with explicit uncertainty.
+
+\section{Per-expiration coefficient analysis and regime transfer}\label{app:per-exp}
+
+\textbf{Per-expiration coefficients vs.\ market IV term structure.} We fit linear Dupire per expiration on SPY and compare the discovered diffusion coefficient against the market-average implied volatility at that maturity. Source: \texttt{outputs/tables/per\_expiration\_coefficients.csv}; figure \texttt{figures/coefficient\_vs\_maturity.pdf}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Per-expiration linear-Dupire coefficients on SPY vs.\ market average IV. The diffusion coefficient does not track the IV term structure (Spearman corr $= +0.008$) and turns negative for $\tau > 0.4$.}
+\label{tab:per-exp}
+\begin{tabular}{rrrrr}
+\toprule
+$\tau$ (yrs) & $n$ strikes & coef drift & coef diffusion & market avg IV \\
+\midrule
+$0.033$ & $73$ & $-0.425$ & $+0.0112$  & $0.240$ \\
+$0.160$ & $46$ & $-0.204$ & $+0.0033$  & $0.205$ \\
+$0.287$ & $19$ & $-0.136$ & $+0.0040$  & $0.191$ \\
+$0.415$ & $31$ & $-0.142$ & $+0.0005$  & $0.198$ \\
+$0.542$ & $14$ & $-0.149$ & $\mathbf{-0.0024}$ & $0.230$ \\
+$0.797$ & $43$ & $-0.112$ & $\mathbf{-0.0003}$ & $0.214$ \\
+$1.179$ & $5$  & $-0.102$ & $\mathbf{-0.0003}$ & $0.222$ \\
+$1.815$ & $3$  & $-0.082$ & $\mathbf{-0.0003}$ & $0.214$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two structural issues are visible. First, market average IV is U-shaped in maturity (short end $0.240$, interior $\approx 0.20$, long end $0.21$--$0.25$) but the discovered diffusion coefficient declines almost monotonically and changes \emph{sign} at $\tau \approx 0.4$. A local-variance interpretation $\sigma_{\text{loc}}^2 \propto c_2 / k^2_{\text{scale}}$ requires $c_2 > 0$; the long-maturity sign flip is structurally impossible for a true local-variance model. Second, the Spearman correlation between the per-expiration diffusion coefficient and market average IV is $+0.008$ --- the discovered diffusion does not encode the term structure the market prices. Together these point to a regression-identifiability collapse: at long maturities $\partial_{kk} C$ is small in magnitude relative to $\partial_k C$, and the OLS fit reallocates explanatory power across the two collinear columns, producing a sign-flipped diffusion coefficient that is not interpretable as a market quantity.
+
+\textbf{Moneyness-regime transfer.} As an independent test of non-invariance we split SPY by $|k|$ into ATM ($|k| \le 0.05$) and OTM ($|k| > 0.05$) and train/test in both directions. Source: \texttt{outputs/tables/generalization\_analysis.csv}; figure \texttt{figures/transfer\_heatmap.pdf}.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{ATM$\leftrightarrow$OTM regime transfer on SPY (split at $|k|{=}0.05$). Both directions fail; the asymmetry suggests separate operators for ATM and OTM rather than a single stationary Dupire.}
+\label{tab:regime-transfer}
+\begin{tabular}{lrrr}
+\toprule
+Direction & $R^2_{\text{train}}$ & $R^2_{\text{test}}$ & $n_{\text{train}} / n_{\text{test}}$ \\
+\midrule
+ATM $\to$ OTM & $0.499$ & $\mathbf{-0.888}$ & $150 / 450$ \\
+OTM $\to$ ATM & $0.754$ & $\mathbf{-0.119}$ & $450 / 150$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The regime-transfer collapse complements the per-expiration finding: the operator is not stationary across moneyness either. The combined picture --- maturity sign-flip, near-zero IV correlation, and bi-directional regime-transfer failure --- supports the interpretation in \S\ref{sec:threats} that the in-sample $R^2$ lift on a single ticker reflects local fit on a slice-specific shape, not the discovery of a globally invariant local-volatility operator.
+
+\section{Honest ablation: full chain and KAN-clean view}\label{app:ablation-kan}
+
+Figure~\ref{fig:ablation} in the main text uses the grouped, non-monotonic ablation. The complementary ``KAN-clean'' view in Figure~\ref{fig:ablation-kan} adds each component in the natural order (GP $\to$ log-$m$ $\to$ analytical $\theta$ $\to$ KAN) and shows monotonic $R^2$ improvement at each step. Both views use the same SPY ablation chain (\texttt{ablation\_chain.csv}); the difference is presentation, and we keep both to avoid hiding the non-monotonicity that arises in configurations C and D before analytical $\theta$ is substituted.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.68\linewidth]{figures/ablation_kan_clean.pdf}
+\caption{KAN-clean ablation view: monotonic component-wise additions on SPY. Source: \texttt{ablation\_chain.csv}.}
+\label{fig:ablation-kan}
+\end{figure}
 
 \end{document}

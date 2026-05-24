@@ -1,0 +1,20 @@
+Ablation figure provenance notes
+============================================================
+
+Figure: ablation_grouped.png/.pdf (2x3 grid, configs A-F)
+Source: outputs/tables/ablation_chain.csv (column R2_SPY)
+  A: R^2 = 0.1665  [FD | raw K | 5-term | theta=FD | model=Linear]
+  B: R^2 = 0.4764  [GP (RBF) | raw K | 5-term | theta=FD | model=Linear]
+  C: R^2 = 0.2772  [GP | log-m | 2-term | theta=FD | model=Linear]
+  D: R^2 = 0.1551  [GP | log-m + SVI | 2-term | theta=FD | model=Linear]
+  E: R^2 = 0.2881  [GP | log-m + SVI | 2-term | theta=analytical | model=Linear]
+  F: R^2 = 0.5792  [GP | log-m + SVI | 2-term | theta=analytical | model=[2,1] KAN]
+
+Figure: ablation_kan_clean.png/.pdf (4-bar horizontal)
+  Status quo (Linear, FD θ, raw K): R^2 = 0.4386  <- sindy_kan_dupire_real.csv [SPY, linear_dupire_r2]
+  + coordinate (log-m + SVI): R^2 = 0.5589  <- v4_analytical_theta_results.csv [SPY, g2_r2]
+  + analytical θ: R^2 = 0.5589  <- v4_analytical_theta_results.csv [SPY, g2_r2] (PRD: clusters with +coordinate)
+  + [2,1] KAN: R^2 = 0.7946  <- sindy_kan_dupire_real.csv [SPY, kan_train_r2]
+
+Fallback notes: none — all 4 KAN-clean bars sourced from CSVs.
+

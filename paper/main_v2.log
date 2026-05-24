@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  25 MAY 2026 00:15
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.27)  25 MAY 2026 01:51
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -584,7 +584,7 @@ r/local/texlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/usr/local/t
 exlive/2026basic/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/local/texlive/20
 26basic/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/usr/local/texlive/2026bas
 ic/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
-<figures/fig1_noise_robustness.pdf, id=139, 463.10577pt x 296.29758pt>
+<figures/fig1_noise_robustness.pdf, id=155, 463.10577pt x 296.29758pt>
 File: figures/fig1_noise_robustness.pdf Graphic file (type pdf)
 <use figures/fig1_noise_robustness.pdf>
 Package pdftex.def Info: figures/fig1_noise_robustness.pdf  used on input line 
@@ -595,48 +595,62 @@ Package pdftex.def Info: figures/fig1_noise_robustness.pdf  used on input line
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 [2]
-<figures/fig2_ablation_bars.pdf, id=168, 462.37743pt x 281.5939pt>
-File: figures/fig2_ablation_bars.pdf Graphic file (type pdf)
-<use figures/fig2_ablation_bars.pdf>
-Package pdftex.def Info: figures/fig2_ablation_bars.pdf  used on input line 104
-.
-(pdftex.def)             Requested size: 328.82707pt x 200.25961pt.
+<figures/ablation_grouped.pdf, id=184, 715.70929pt x 365.14166pt>
+File: figures/ablation_grouped.pdf Graphic file (type pdf)
+<use figures/ablation_grouped.pdf>
+Package pdftex.def Info: figures/ablation_grouped.pdf  used on input line 104.
+(pdftex.def)             Requested size: 366.40834pt x 186.9385pt.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[3 <./figures/fig1_noise_robustness.pdf>] [4 <./figures/fig2_ablation_bars.pdf>
-] (./main_v2.bbl [5])
+[3 <./figures/fig1_noise_robustness.pdf>]
+<figures/misspec_jump_sweep.pdf, id=265, 452.82677pt x 295.81454pt>
+File: figures/misspec_jump_sweep.pdf Graphic file (type pdf)
+<use figures/misspec_jump_sweep.pdf>
+Package pdftex.def Info: figures/misspec_jump_sweep.pdf  used on input line 139
+.
+(pdftex.def)             Requested size: 291.2458pt x 190.26402pt.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[4 <./figures/ablation_grouped.pdf>] [5 <./figures/misspec_jump_sweep.pdf>]
+(./main_v2.bbl [6])
 LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <14.4> on input line 180.
+(Font)              <14.4> on input line 191.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 180.
+(hyperref)                removing `math shift' on input line 191.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\times' on input line 180.
+(hyperref)                removing `\times' on input line 191.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 180.
+(hyperref)                removing `math shift' on input line 191.
 
-[6]
-<figures/pipeline_diagram.pdf, id=356, 281.85298pt x 570.93298pt>
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+<figures/pipeline_diagram.pdf, id=501, 281.85298pt x 570.93298pt>
 File: figures/pipeline_diagram.pdf Graphic file (type pdf)
 <use figures/pipeline_diagram.pdf>
-Package pdftex.def Info: figures/pipeline_diagram.pdf  used on input line 208.
+Package pdftex.def Info: figures/pipeline_diagram.pdf  used on input line 219.
 (pdftex.def)             Requested size: 328.82707pt x 666.09845pt.
 
-
-LaTeX Warning: Float too large for page by 51.61287pt on input line 210.
+LaTeX Warning: Float too large for page by 51.61287pt on input line 221.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Underfull \hbox (badness 2790) in paragraph at lines 217--217
+Underfull \hbox (badness 2790) in paragraph at lines 228--228
 []\T1/lmr/m/n/10 (+20) Table 6: []PINN vari-ants on syn-thetic BS sur-faces. So
 urce: \T1/lmtt/m/n/10 pinn_results_{call,put}.csv\T1/lmr/m/n/10 (+20) ,
  []
@@ -644,30 +658,24 @@ urce: \T1/lmtt/m/n/10 pinn_results_{call,put}.csv\T1/lmr/m/n/10 (+20) ,
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 285.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\theta' on input line 285.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 285.
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
 [7]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 296.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\theta' on input line 296.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 296.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
@@ -680,23 +688,29 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 382.
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\sigma' on input line 382.
+(hyperref)                removing `math shift' on input line 393.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 382.
+(hyperref)                removing `\sigma' on input line 393.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 382.
+(hyperref)                removing `subscript' on input line 393.
 
 
-Overfull \hbox (12.811pt too wide) in paragraph at lines 383--384
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 393.
+
+
+Overfull \hbox (12.811pt too wide) in paragraph at lines 394--395
 \T1/lmr/m/n/10 (-20) cov-ery; me-dian IV achieves $\OMS/lmsy/m/n/10 f\OT1/lmr/m
 /n/10 (-20) 0\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 7%\OML/lmm/m/it/10 ; \OT1/
 lmr/m/n/10 (-20) 4\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 5%\OML/lmm/m/it/10 ; 
@@ -710,22 +724,87 @@ ML/lmm/m/it/10 ; \OT1/lmr/m/n/10 (-20) 6\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20)
  (-20) 3%\OMS/lmsy/m/n/10 g$\T1/lmr/m/n/10 (-20) .
  []
 
-[9] [10] [11 <./figures/pipeline_diagram.pdf>] (./main_v2.aux)
+[9]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+<figures/misspec_stochvol_pattern.pdf, id=530, 513.4131pt x 309.94522pt>
+File: figures/misspec_stochvol_pattern.pdf Graphic file (type pdf)
+<use figures/misspec_stochvol_pattern.pdf>
+Package pdftex.def Info: figures/misspec_stochvol_pattern.pdf  used on input li
+ne 425.
+(pdftex.def)             Requested size: 291.2458pt x 175.82405pt.
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+Overfull \hbox (111.02513pt too wide) in paragraph at lines 432--433
+\T1/lmr/m/n/10 (-20) and one closed-form base-line against the same SPY sur-fac
+e used in Ÿ[][]3.3[][]. Source: \T1/lmtt/m/n/10 outputs/tables/discovery_method
+_comparison.csv\T1/lmr/m/n/10 (-20) . 
+ []
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[10]
+Overfull \hbox (22.74507pt too wide) in paragraph at lines 473--474
+\T1/lmr/m/n/10 (-20) Source: \T1/lmtt/m/n/10 outputs/tables/per_expiration_coef
+ficients.csv\T1/lmr/m/n/10 (-20) ; fig-ure \T1/lmtt/m/n/10 figures/coefficient_
+vs_maturity.pdf\T1/lmr/m/n/10 (-20) . 
+ []
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+Overfull \hbox (75.6735pt too wide) in paragraph at lines 497--498
+\T1/lmr/m/n/10 (-20) ($\OMS/lmsy/m/n/10 j\OML/lmm/m/it/10 k\OMS/lmsy/m/n/10 j ^
+^T \OT1/lmr/m/n/10 (-20) 0\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20) 05$\T1/lmr/m/
+n/10 (-20) ) and OTM ($\OMS/lmsy/m/n/10 j\OML/lmm/m/it/10 k\OMS/lmsy/m/n/10 j \
+OML/lmm/m/it/10 > \OT1/lmr/m/n/10 (-20) 0\OML/lmm/m/it/10 :\OT1/lmr/m/n/10 (-20
+) 05$\T1/lmr/m/n/10 (-20) ) and train/test in both di-rec-tions. Source: \T1/lm
+tt/m/n/10 outputs/tables/generalization_analysis.csv\T1/lmr/m/n/10 (-20) ;
+ []
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+<figures/ablation_kan_clean.pdf, id=543, 570.96214pt x 296.34753pt>
+File: figures/ablation_kan_clean.pdf Graphic file (type pdf)
+<use figures/ablation_kan_clean.pdf>
+Package pdftex.def Info: figures/ablation_kan_clean.pdf  used on input line 521
+.
+(pdftex.def)             Requested size: 319.42996pt x 165.79973pt.
+
+Underfull \hbox (badness 3579) in paragraph at lines 522--522
+[]\T1/lmr/m/n/10 (+20) Figure 6: []KAN-clean ab-la-tion view: mono-tonic compon
+ent-wise ad-di-tions on SPY. Source:
+ []
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[11] [12] [13 <./figures/pipeline_diagram.pdf>] [14 <./figures/misspec_stochvol
+_pattern.pdf> <./figures/ablation_kan_clean.pdf>] (./main_v2.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `main_v2.out' has not changed.
-(rerunfilecheck)             Checksum: 3821765A6414D9D2F77815F5E89A87DA;3905.
+(rerunfilecheck)             Checksum: 699EE0390A38F98AD048BD6A370410CD;5091.
  ) 
 Here is how much of TeX's memory you used:
- 13875 strings out of 469006
- 214559 string characters out of 5454813
- 680853 words of memory out of 5000000
- 42030 multiletter control sequences out of 15000+600000
- 742897 words of font info for 237 fonts, out of 8000000 for 9000
+ 13941 strings out of 469006
+ 215964 string characters out of 5454813
+ 684210 words of memory out of 5000000
+ 42067 multiletter control sequences out of 15000+600000
+ 743547 words of font info for 244 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
- 75i,13n,79p,1260b,574s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,13n,79p,1260b,594s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></u
 sr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/lo
 cal/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmbx8.pfb></usr/local/te
@@ -751,10 +830,10 @@ e1/public/lm/lmsy8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/pub
 lic/lm/lmsy9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm
 /lmtt10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/lm/lmtt
 12.pfb>
-Output written on main_v2.pdf (11 pages, 554534 bytes).
+Output written on main_v2.pdf (14 pages, 655327 bytes).
 PDF statistics:
- 590 PDF objects out of 1000 (max. 8388607)
- 365 compressed objects within 4 object streams
- 78 named destinations out of 1000 (max. 500000)
- 64712 words of extra memory for PDF output out of 74296 (max. 10000000)
+ 924 PDF objects out of 1000 (max. 8388607)
+ 467 compressed objects within 5 object streams
+ 93 named destinations out of 1000 (max. 500000)
+ 64759 words of extra memory for PDF output out of 74296 (max. 10000000)
 

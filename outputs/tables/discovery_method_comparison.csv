@@ -1,0 +1,6 @@
+method,derivatives,R2_SPY,sigma_loc_median,sigma_loc_iqr,interpretability,notes
+"STLSQ (existing GP-Dupire, 2-term OLS)",GP,0.4386234468588477,0.06925114797163594,0.0,coefficients,STLSQ on 2-term GP-Dupire library (existing). sigma_loc from in-house OLS.
+"STLSQ + KAN [2,1] (existing)",GP,0.7671622697798576,0.0284289087649445,,activations,"[2,1] KAN-Dupire (existing). sigma_loc median over per-cell KAN-inverted grid."
+"Weak-form regression (2-term, GP surface)",GP,0.23166299126787016,,,integrals,"Spectral sine basis, n_test=36, cond=1.13e+02. c2=-7.13e-07; sigma_loc undefined (c2<=0)"
+"Ridge + threshold (2-term, GP)",GP,0.07952693484623219,,,coefficients,"RidgeCV + hard threshold (alpha=1.00e+04, thr=0.0053). c2=0; sigma_loc undefined (c2 thresholded to 0)"
+Direct Dupire formula (pointwise),FD on GP surface,,0.20529049919361733,0.19960287022858716,pointwise,Per-cell formula; 80.2% valid cells. IQR captures the cross-cell dispersion.

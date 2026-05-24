@@ -1,0 +1,48 @@
+# Reproducibility config for SINDy-KAN Black-Scholes PDE discovery.
+#
+# Loaded by run_experiment.py. All experiments are CPU-only and use seed=42
+# (the first entry of `seeds`) as the canonical seed. Output paths are
+# project-root-relative.
+
+paths:
+  tables: outputs/tables
+  figures_paper: outputs/figures/paper
+  paper: paper
+
+seeds: [42, 43, 44, 45, 46]
+
+synthetic:
+  S_range: [50, 150]
+  n_S: 100
+  n_t: 100
+  r: 0.05
+  sigma: 0.20
+  K: 100
+  T: 1.0
+
+noise_levels: [0, 0.005, 0.01, 0.02, 0.03, 0.05, 0.07, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
+
+real_data:
+  tickers: [SPY, QQQ, AAPL, MSFT]
+  min_volume: 50
+  min_oi: 100
+  moneyness_range: [0.8, 1.2]
+
+gp:
+  n_subsample: 500
+  kernel: RBF       # or Matern
+  n_restarts: 5
+
+kan:
+  architecture: [2, 1]
+  spline_grid: 5
+  epochs: 5000
+  lr: 0.001
+  l1_weight: 0.01
+
+pinn:
+  epochs: 5000
+  lr: 0.001
+  lambda_pde: 1.0
+  lambda_bc: 10.0
+  lambda_data: 1.0

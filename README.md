@@ -174,6 +174,24 @@ python run_pipeline.py
 pytest tests/ -v
 ```
 
+### Single-experiment reproducibility (fast path)
+
+For reviewers who do not want to wait for the full pipeline, every
+experiment is also wired up as a standalone command driven by `config.yaml`
+at the project root. Each experiment takes 2-3 minutes on CPU:
+
+```bash
+python run_experiment.py --experiment noise_comparison
+python run_experiment.py --experiment kan_dupire
+python run_experiment.py --experiment misspec_taxonomy
+python run_experiment.py --experiment all   # runs everything sequentially
+```
+
+Supported experiments: `noise_comparison`, `real_data_sindy`, `kan_dupire`,
+`misspec_taxonomy`, `ablation`, `discovery_baselines`, `generalization`,
+`activation_stability`, `transfer`, `all`. All parameters (seed, noise grid,
+KAN architecture, tickers, etc.) live in `config.yaml`.
+
 ## Project Structure
 
 ```
